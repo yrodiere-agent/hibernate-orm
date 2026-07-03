@@ -111,19 +111,29 @@ def __addAllFallbacks(repositories, centralMirror, snapshotsMirror, pluginPortal
     __addFallback(repositories, 'Gradle Central Plugin Repository', 'https://plugins.gradle.org/m2', pluginPortalMirror)
 }
 
-__rewriteAll(pluginManagement.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+if (hasProperty('pluginManagement')) {
+    __rewriteAll(pluginManagement.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
 
-gradle.settingsEvaluated { s ->
-    __rewriteAll(s.dependencyResolutionManagement.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
-    __addAllFallbacks(s.dependencyResolutionManagement.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
-}
+    gradle.settingsEvaluated { s ->
+        __rewriteAll(s.dependencyResolutionManagement.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+        __addAllFallbacks(s.dependencyResolutionManagement.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+    }
 
-gradle.beforeProject { p ->
-    __rewriteAll(p.buildscript.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
-    __rewriteAll(p.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
-}
+    gradle.beforeProject { p ->
+        __rewriteAll(p.buildscript.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+        __rewriteAll(p.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+    }
 
-gradle.afterProject { p ->
-    __addAllFallbacks(p.buildscript.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
-    __addAllFallbacks(p.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+    gradle.afterProject { p ->
+        __addAllFallbacks(p.buildscript.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+        __addAllFallbacks(p.repositories, centralMirror, snapshotsMirror, pluginPortalMirror)
+    }
+} else {
+    // When applied from a buildscript block in an applied script, the caller sets
+    // __mirrorTargetRepositories to pass its ScriptHandler repositories (which are
+    // separate from the project's buildscript.repositories).
+    def __targetRepos = rootProject.ext.has('__mirrorTargetRepositories') ? rootProject.ext.__mirrorTargetRepositories : buildscript.repositories
+    rootProject.ext.__mirrorTargetRepositories = null
+    __rewriteAll(__targetRepos, centralMirror, snapshotsMirror, pluginPortalMirror)
+    __addAllFallbacks(__targetRepos, centralMirror, snapshotsMirror, pluginPortalMirror)
 }
