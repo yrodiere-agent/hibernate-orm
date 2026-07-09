@@ -9,6 +9,8 @@ plugins {
     id 'com.gradle.enterprise' version '3.2.1'
 }
 
+apply from: 'gradle/mirror.gradle'
+
 if ( !JavaVersion.current().java8Compatible ) {
     throw new GradleException( "Gradle must be run with Java 8 or later" )
 }
