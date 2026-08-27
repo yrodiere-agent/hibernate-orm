@@ -250,6 +250,9 @@ public final class CallbackDefinitionResolver {
 			ClassDetails entityClass,
 			List<LifecycleEventHandler> listOfListeners,
 			ModelsContext sourceModelContext) {
+		if ( !entityClass.isRealClass() ) {
+			return;
+		}
 		final var module = entityClass.toJavaClass().getModule();
 		if ( module.isNamed() ) {
 			final var moduleDetails = sourceModelContext.getModuleDetailsRegistry()
