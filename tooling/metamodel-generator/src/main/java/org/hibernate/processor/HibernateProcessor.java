@@ -5,6 +5,7 @@
 package org.hibernate.processor;
 
 import jakarta.annotation.Nullable;
+import org.hibernate.Incubating;
 import org.hibernate.processor.annotation.AnnotationMetaEntity;
 import org.hibernate.processor.annotation.AnnotationMetaPackage;
 import org.hibernate.processor.annotation.NonManagedMetamodel;
@@ -51,6 +52,8 @@ import static org.hibernate.processor.HibernateProcessor.ADD_GENERATED_ANNOTATIO
 import static org.hibernate.processor.HibernateProcessor.ADD_GENERATION_DATE;
 import static org.hibernate.processor.HibernateProcessor.ADD_SUPPRESS_WARNINGS_ANNOTATION;
 import static org.hibernate.processor.HibernateProcessor.DEBUG_OPTION;
+import static org.hibernate.processor.HibernateProcessor.DIALECT_DATABASE_VERSION_OPTION;
+import static org.hibernate.processor.HibernateProcessor.DIALECT_OPTION;
 import static org.hibernate.processor.HibernateProcessor.EXCLUDE;
 import static org.hibernate.processor.HibernateProcessor.FULLY_ANNOTATION_CONFIGURED_OPTION;
 import static org.hibernate.processor.HibernateProcessor.INCLUDE;
@@ -60,6 +63,7 @@ import static org.hibernate.processor.HibernateProcessor.LAZY_XML_PARSING;
 import static org.hibernate.processor.HibernateProcessor.ORM_XML_OPTION;
 import static org.hibernate.processor.HibernateProcessor.PERSISTENCE_XML_OPTION;
 import static org.hibernate.processor.HibernateProcessor.SUPPRESS_JAKARTA_DATA_METAMODEL;
+import static org.hibernate.processor.HibernateProcessor.SUPPRESS_JAKARTA_DATA_SECURITY_ANNOTATIONS;
 import static org.hibernate.processor.util.Constants.COLUMN_RESULT;
 import static org.hibernate.processor.util.Constants.COLUMN_RESULTS;
 import static org.hibernate.processor.util.Constants.CONSTRUCTOR_RESULT;
@@ -147,7 +151,10 @@ import static org.hibernate.processor.util.TypeUtils.isMemberType;
 		SUPPRESS_JAKARTA_DATA_METAMODEL,
 		INCLUDE, EXCLUDE,
 		INDEX,
-		JAKARTA_DATA_SORT_COMPLIANCE
+		JAKARTA_DATA_SORT_COMPLIANCE,
+		SUPPRESS_JAKARTA_DATA_SECURITY_ANNOTATIONS,
+		DIALECT_OPTION,
+		DIALECT_DATABASE_VERSION_OPTION
 })
 public class HibernateProcessor extends AbstractProcessor {
 
@@ -170,6 +177,18 @@ public class HibernateProcessor extends AbstractProcessor {
 	 * Controls whether the processor should consider XML files
 	 */
 	public static final String FULLY_ANNOTATION_CONFIGURED_OPTION = "fullyAnnotationConfigured";
+
+	/**
+	 * The default dialect class to use for any HQL validation.
+	 */
+	@Incubating
+	public static final String DIALECT_OPTION = "dialect";
+
+	/**
+	 * The database version string to use for the default dialect class.
+	 */
+	@Incubating
+	public static final String DIALECT_DATABASE_VERSION_OPTION = "dialectDatabaseVersion";
 
 	/**
 	 * Controls whether the processor should only load XML files when there have been changes
@@ -206,7 +225,16 @@ public class HibernateProcessor extends AbstractProcessor {
 	 * {@code jakarta.data.Sort} types with a null type argument, which
 	 * the Jakarta Data specification allows.
 	 */
+	@Incubating
 	public static final String JAKARTA_DATA_SORT_COMPLIANCE = "jakartaDataSortCompliance";
+
+	/**
+	 * Option to suppress propagation of {@code jakarta.annotation.security}
+	 * annotations from repository interfaces to generated implementations.
+	 * By default, security annotations are propagated.
+	 */
+	@Incubating
+	public static final String SUPPRESS_JAKARTA_DATA_SECURITY_ANNOTATIONS = "suppressJakartaDataSecurityAnnotations";
 
 
 	/**
@@ -231,6 +259,7 @@ public class HibernateProcessor extends AbstractProcessor {
 	 * index is created. The index is used to speed up query validation
 	 * for faster compilation times.
 	 */
+	@Incubating
 	public static final String INDEX = "index";
 
 	private static final boolean ALLOW_OTHER_PROCESSORS_TO_CLAIM_ANNOTATIONS = false;
@@ -319,7 +348,7 @@ public class HibernateProcessor extends AbstractProcessor {
 		context.setAddInjectAnnotation( packagePresent(jakartaInjectPackage) );
 		context.setAddNonnullAnnotation( packagePresent(jakartaAnnotationPackage) );
 		context.setAddGeneratedAnnotation( packagePresent(jakartaAnnotationPackage) );
-		context.setAddDependentAnnotation( packagePresent(jakartaContextPackage) );
+		context.setCdiAvailable( packagePresent(jakartaContextPackage) );
 		context.setAddTransactionScopedAnnotation( packagePresent(jakartaTransactionPackage) );
 		context.setDataEventPackageAvailable( packagePresent(dataEventPackage) );
 		context.setQuarkusInjection( packagePresent(quarkusOrmPackage) || packagePresent(quarkusReactivePackage) );
@@ -337,6 +366,9 @@ public class HibernateProcessor extends AbstractProcessor {
 		context.setGenerateJakartaDataStaticMetamodel( !suppressJakartaData && packagePresent(jakartaDataPackage) );
 
 		context.setJakartaDataSortCompliance( parseBoolean( options.get( JAKARTA_DATA_SORT_COMPLIANCE ) ) );
+
+		context.setPropagateSecurityAnnotations(
+				!parseBoolean( options.get( SUPPRESS_JAKARTA_DATA_SECURITY_ANNOTATIONS ) ) );
 
 		final var setting = options.get( ADD_GENERATED_ANNOTATION );
 		if ( setting != null ) {

@@ -21,6 +21,7 @@ import org.hibernate.Incubating;
 import org.hibernate.Interceptor;
 import org.hibernate.Internal;
 import org.hibernate.MappingException;
+import org.hibernate.Remove;
 import org.hibernate.SessionFactory;
 import org.hibernate.SessionFactoryObserver;
 import org.hibernate.boot.MetadataBuilder;
@@ -102,6 +103,8 @@ import static org.hibernate.internal.CoreMessageLogger.CORE_LOGGER;
  *     .addAnnotatedClass(User.class)
  *     // read package-level annotations of the named package
  *     .addPackage("org.hibernate.auction")
+ *     // read module-level annotations of the given module
+ *     .addModule(MyModule.class.getModule())
  *     // set a configuration property
  *     .setProperty(AvailableSettings.DATASOURCE,
  *                  "java:comp/env/jdbc/test")
@@ -387,6 +390,7 @@ public class Configuration {
 	 *
 	 * @see #configure(String)
 	 */
+	@Deprecated(since = "8.0")
 	public Configuration configure() throws HibernateException {
 		return configure( StandardServiceRegistryBuilder.DEFAULT_CFG_RESOURCE_NAME );
 	}
@@ -402,6 +406,7 @@ public class Configuration {
 	 *
 	 * @throws HibernateException Generally indicates we cannot find the named resource
 	 */
+	@Deprecated(since = "8.0")
 	public Configuration configure(String resource) throws HibernateException {
 		standardServiceRegistryBuilder.configure( resource );
 		// todo : still need to have StandardServiceRegistryBuilder handle the "other cfg.xml" elements.
@@ -429,6 +434,7 @@ public class Configuration {
 	 *
 	 * @throws HibernateException Generally indicates a problem access the url
 	 */
+	@Deprecated(since = "8.0")
 	public Configuration configure(URL url) throws HibernateException {
 		standardServiceRegistryBuilder.configure( url );
 		properties.putAll( standardServiceRegistryBuilder.getSettings() );
@@ -446,6 +452,7 @@ public class Configuration {
 	 *
 	 * @throws HibernateException Generally indicates a problem access the file
 	 */
+	@Deprecated(since = "8.0")
 	public Configuration configure(File configFile) throws HibernateException {
 		standardServiceRegistryBuilder.configure( configFile );
 		properties.putAll( standardServiceRegistryBuilder.getSettings() );
@@ -612,6 +619,7 @@ public class Configuration {
 	 * An object capable of parsing XML mapping files that can then be passed
 	 * to {@link #addXmlMapping(Binding)}.
 	 */
+	@Remove
 	public XmlMappingBinderAccess getXmlMappingBinderAccess() {
 		return metadataSources.getXmlMappingBinderAccess();
 	}
@@ -623,6 +631,7 @@ public class Configuration {
 	 *
 	 * @return {@code this} for method chaining
 	 */
+	@Remove
 	public Configuration addXmlMapping(Binding<?> binding) {
 		metadataSources.addXmlBinding( binding );
 		return this;
@@ -817,6 +826,46 @@ public class Configuration {
 	}
 
 	/**
+	 * Read module-level metadata from the given {@linkplain Module module}.
+	 * <p>
+	 * Annotations placed on {@code module-info.java} (such as
+	 * {@link org.hibernate.annotations.FilterDef @FilterDef},
+	 * {@link org.hibernate.annotations.TypeRegistration @TypeRegistration},
+	 * {@link jakarta.persistence.NamedQuery @NamedQuery}, etc.)
+	 * will be processed during bootstrap.
+	 *
+	 * @param module the module whose annotations should be processed
+	 *
+	 * @return {@code this} for method chaining
+	 *
+	 * @since 7.0
+	 *
+	 * @see org.hibernate.boot.MetadataSources#addModule(Module)
+	 */
+	@Incubating
+	public Configuration addModule(Module module) {
+		metadataSources.addModule( module );
+		return this;
+	}
+
+	/**
+	 * Read module-level metadata for the named module.
+	 *
+	 * @param moduleName the name of the module whose annotations should be processed
+	 *
+	 * @return {@code this} for method chaining
+	 *
+	 * @since 7.0
+	 *
+	 * @see org.hibernate.boot.MetadataSources#addModule(String)
+	 */
+	@Incubating
+	public Configuration addModule(String moduleName) {
+		metadataSources.addModule( moduleName );
+		return this;
+	}
+
+	/**
 	 * Read all {@code .hbm.xml} mappings from a {@code .jar} file.
 	 * <p>
 	 * Assumes that any file named {@code *.hbm.xml} is a mapping document.
@@ -829,6 +878,7 @@ public class Configuration {
 	 * @throws MappingException Indicates problems reading the jar file or
 	 * processing the contained mapping documents.
 	 */
+	@Remove
 	public Configuration addJar(File jar) throws MappingException {
 		metadataSources.addJar( jar );
 		return this;

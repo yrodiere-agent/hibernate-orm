@@ -5,6 +5,7 @@
 package org.hibernate.boot.spi;
 
 import org.hibernate.Incubating;
+import org.hibernate.Remove;
 import org.hibernate.audit.AuditStrategy;
 import org.hibernate.boot.model.TypeDefinitionRegistry;
 import org.hibernate.boot.model.naming.ObjectNameNormalizer;
@@ -38,7 +39,10 @@ public interface MetadataBuildingContext {
 	 * Access to the options specified by the {@link org.hibernate.boot.MetadataBuilder}
 	 *
 	 * @return The options
+	 *
+	 * @apiNote This method will be removed in 9.0.
 	 */
+	@Remove
 	MetadataBuildingOptions getBuildingOptions();
 
 	/**
@@ -67,66 +71,80 @@ public interface MetadataBuildingContext {
 	}
 
 	@Incubating
+	@Remove
 	default int getPreferredSqlTypeCodeForBoolean() {
 		return ConfigurationHelper.getPreferredSqlTypeCodeForBoolean( getRegistry() );
 	}
 
 	@Incubating
+	@Remove
 	default int getPreferredSqlTypeCodeForDuration() {
 		return ConfigurationHelper.getPreferredSqlTypeCodeForDuration( getRegistry() );
 	}
 
 	@Incubating
+	@Remove
 	default int getPreferredSqlTypeCodeForUuid() {
 		return ConfigurationHelper.getPreferredSqlTypeCodeForUuid( getRegistry() );
 	}
 
 	@Incubating
+	@Remove
 	default int getPreferredSqlTypeCodeForInstant() {
 		return ConfigurationHelper.getPreferredSqlTypeCodeForInstant( getRegistry() );
 	}
 
 	@Incubating
+	@Remove
 	default int getPreferredSqlTypeCodeForArray() {
 		return ConfigurationHelper.getPreferredSqlTypeCodeForArray( getRegistry() );
 	}
 
 	@Incubating
+	@Remove
 	default boolean isPreferJavaTimeJdbcTypesEnabled() {
 		return isPreferJavaTimeJdbcTypesEnabled( getRegistry() );
 	}
 
 	@Incubating
+	@Remove
 	default boolean isPreferNativeEnumTypesEnabled() {
 		return isPreferNativeEnumTypesEnabled( getRegistry() );
 	}
 
 	@Incubating
+	@Remove
 	default boolean isPreferLocaleLanguageTagEnabled() {
 		return isPreferLocaleLanguageTagEnabled( getRegistry() );
 	}
 
+	@Remove
 	static boolean isPreferJavaTimeJdbcTypesEnabled(ServiceRegistry serviceRegistry) {
 		return isPreferJavaTimeJdbcTypesEnabled( serviceRegistry.requireService( ConfigurationService.class ) );
 	}
 
+	@Remove
 	static boolean isPreferNativeEnumTypesEnabled(ServiceRegistry serviceRegistry) {
 		return isPreferNativeEnumTypesEnabled( serviceRegistry.requireService( ConfigurationService.class ) );
 	}
 
+	@Remove
 	static boolean isPreferLocaleLanguageTagEnabled(ServiceRegistry serviceRegistry) {
 		return isPreferLocaleLanguageTagEnabled( serviceRegistry.requireService( ConfigurationService.class ) );
 	}
 
+	@Remove
 	static boolean isPreferJavaTimeJdbcTypesEnabled(ConfigurationService configurationService) {
 		return getBoolean( JAVA_TIME_USE_DIRECT_JDBC, configurationService.getSettings() );
 	}
 
+	@Remove
 	static boolean isPreferNativeEnumTypesEnabled(ConfigurationService configurationService) {
 		//TODO: HHH-17905 proposes to switch this default to true
 		return getBoolean( PREFER_NATIVE_ENUM_TYPES, configurationService.getSettings() );
 	}
 
+	@Remove
 	static boolean isPreferLocaleLanguageTagEnabled(ConfigurationService configurationService) {
 		return getBoolean( PREFER_LOCALE_LANGUAGE_TAG, configurationService.getSettings() );
 	}

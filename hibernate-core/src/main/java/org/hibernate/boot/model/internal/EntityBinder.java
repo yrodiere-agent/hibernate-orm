@@ -134,6 +134,7 @@ import static org.hibernate.boot.model.internal.BinderHelper.extractFromPackage;
 import static org.hibernate.boot.model.internal.BinderHelper.getMappedSuperclassOrNull;
 import static org.hibernate.boot.model.internal.BinderHelper.getPath;
 import static org.hibernate.boot.model.internal.BinderHelper.handleForeignKeyConstraint;
+import static org.hibernate.boot.model.internal.BinderHelper.resolveContainerForeignKey;
 import static org.hibernate.boot.model.internal.BinderHelper.hasToOneAnnotation;
 import static org.hibernate.boot.model.internal.BinderHelper.toAliasEntityMap;
 import static org.hibernate.boot.model.internal.BinderHelper.toAliasTableMap;
@@ -987,7 +988,7 @@ public class EntityBinder {
 			return pkJoinColumn.foreignKey();
 		}
 		else if ( pkJoinColumns != null ) {
-			return pkJoinColumns.foreignKey();
+			return resolveContainerForeignKey( pkJoinColumns.foreignKey(), pkJoinColumns.value() );
 		}
 		else {
 			return null;
@@ -1403,6 +1404,12 @@ public class EntityBinder {
 			throw new AssertionFailure( "@Entity should never be missing" );
 		}
 		final String entityName = entity.name();
+		if ( StringHelper.isQuoted( entityName ) ) {
+			throw new AnnotationException(
+					"Entity name '" + entityName + "' for " + annotatedClass.getName()
+							+ " is quoted; quoted database identifiers must be declared using table and column annotations"
+			);
+		}
 		name = entityName.isBlank() ? unqualify( annotatedClass.getName() ) : entityName;
 	}
 
@@ -2219,7 +2226,7 @@ public class EntityBinder {
 		final var jpaSecondaryTable = findMatchingSecondaryTable( join );
 		if ( jpaSecondaryTable != null ) {
 			final boolean noConstraintByDefault = context.getBuildingOptions().isNoConstraintByDefault();
-			final var foreignKey = jpaSecondaryTable.foreignKey();
+			final var foreignKey = resolveSecondaryTableForeignKey( jpaSecondaryTable );
 			final var constraintMode = foreignKey.value();
 			if ( constraintMode == ConstraintMode.NO_CONSTRAINT
 				|| constraintMode == ConstraintMode.PROVIDER_DEFAULT && noConstraintByDefault ) {
@@ -2231,6 +2238,10 @@ public class EntityBinder {
 				key.setForeignKeyOptions( foreignKey.options() );
 			}
 		}
+	}
+
+	private static jakarta.persistence.ForeignKey resolveSecondaryTableForeignKey(SecondaryTable table) {
+		return resolveContainerForeignKey( table.foreignKey(), table.pkJoinColumns() );
 	}
 
 	private SecondaryTable findMatchingSecondaryTable(Join join) {

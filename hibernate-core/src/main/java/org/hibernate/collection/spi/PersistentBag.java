@@ -4,6 +4,7 @@
  */
 package org.hibernate.collection.spi;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -38,6 +39,8 @@ import static java.util.Collections.emptyMap;
 @Incubating
 public class PersistentBag<E> extends AbstractPersistentCollection<E> implements List<E> {
 
+	@Serial
+	private static final long serialVersionUID = 1L;
 	/**
 	 * @deprecated Use {@link #bagAsList()} or {@link #collection} instead.
 	 */
@@ -658,6 +661,17 @@ public class PersistentBag<E> extends AbstractPersistentCollection<E> implements
 
 	final class Clear implements DelayedOperation<E> {
 		@Override
+		public QueuedCollectionOperation toQueuedOperation(int order) {
+			return new QueuedCollectionOperation(
+					QueuedCollectionOperation.Kind.CLEAR,
+					null,
+					null,
+					null,
+					order
+			);
+		}
+
+		@Override
 		public void operate() {
 			collection.clear();
 		}
@@ -680,6 +694,17 @@ public class PersistentBag<E> extends AbstractPersistentCollection<E> implements
 		}
 
 		@Override
+		public QueuedCollectionOperation toQueuedOperation(int order) {
+			return new QueuedCollectionOperation(
+					QueuedCollectionOperation.Kind.ADD,
+					getAddedInstance(),
+					null,
+					null,
+					order
+			);
+		}
+
+		@Override
 		public void operate() {
 			// Delayed operations only work on inverse collections i.e. collections with mappedBy,
 			// and these collections don't have duplicates by definition.
@@ -697,6 +722,17 @@ public class PersistentBag<E> extends AbstractPersistentCollection<E> implements
 
 		public SimpleRemove(E orphan) {
 			super( null, orphan );
+		}
+
+		@Override
+		public QueuedCollectionOperation toQueuedOperation(int order) {
+			return new QueuedCollectionOperation(
+					QueuedCollectionOperation.Kind.REMOVE,
+					null,
+					getOrphan(),
+					null,
+					order
+			);
 		}
 
 		@Override

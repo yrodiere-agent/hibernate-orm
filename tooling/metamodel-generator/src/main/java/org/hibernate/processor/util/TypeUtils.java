@@ -285,6 +285,35 @@ public final class TypeUtils {
 		return getAnnotationMirror( element, qualifiedName ) != null;
 	}
 
+	private static final Set<String> SECURITY_ANNOTATIONS = Set.of(
+		"jakarta.annotation.security.DeclareRoles",
+		"jakarta.annotation.security.DenyAll",
+		"jakarta.annotation.security.PermitAll",
+		"jakarta.annotation.security.RolesAllowed",
+		"jakarta.annotation.security.RunAs"
+	);
+
+	public static boolean isInheritedAnnotation(AnnotationMirror annotationMirror, Context context) {
+		final Element annotationType = annotationMirror.getAnnotationType().asElement();
+		// Interceptor bindings (e.g. @Transactional) let the generated repository implementation
+		// participate in interception. They only make sense when CDI is on the build path — without
+		// a container there is nothing to honor them — so guard on CDI availability.
+		return isInterceptorBinding( annotationType ) && context.isCdiAvailable()
+			// Security annotations (@RolesAllowed, @PermitAll, ...) are a Hibernate ORM specific
+			// extension for repository interfaces, copied unless explicitly suppressed. They do not
+			// depend on CDI.
+			|| isSecurityAnnotation( annotationType ) && context.propagateSecurityAnnotations();
+	}
+
+	private static boolean isInterceptorBinding(Element annotationType) {
+		return hasAnnotation( annotationType, "jakarta.interceptor.InterceptorBinding" );
+	}
+
+	private static boolean isSecurityAnnotation(Element annotationType) {
+		return annotationType instanceof TypeElement typeElement
+			&& SECURITY_ANNOTATIONS.contains( typeElement.getQualifiedName().toString() );
+	}
+
 	public static boolean hasAnnotation(Element element, String... qualifiedNames) {
 		for ( var qualifiedName : qualifiedNames ) {
 			if ( hasAnnotation( element, qualifiedName ) ) {

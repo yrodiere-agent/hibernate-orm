@@ -4,6 +4,7 @@
  */
 package org.hibernate.collection.spi;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -54,6 +55,8 @@ import static org.hibernate.resource.transaction.spi.TransactionStatus.ROLLING_B
  */
 public abstract class AbstractPersistentCollection<E> implements Serializable, PersistentCollection<E> {
 
+	@Serial
+	private static final long serialVersionUID = 1L;
 	private transient SharedSessionContractImplementor session;
 	private boolean isTempSession = false;
 
@@ -70,6 +73,7 @@ public abstract class AbstractPersistentCollection<E> implements Serializable, P
 	// collections detect changes made via their public interface and mark
 	// themselves as dirty as a performance optimization
 	private boolean dirty;
+	private long mutationGeneration;
 	protected boolean elementRemoved;
 	private @Nullable Serializable storedSnapshot;
 
@@ -130,6 +134,12 @@ public abstract class AbstractPersistentCollection<E> implements Serializable, P
 	@Override
 	public final void dirty() {
 		dirty = true;
+		mutationGeneration++;
+	}
+
+	@Override
+	public final long getMutationGeneration() {
+		return mutationGeneration;
 	}
 
 	@Override
@@ -530,7 +540,7 @@ public abstract class AbstractPersistentCollection<E> implements Serializable, P
 		}
 		operationQueue.add( operation );
 		//needed so that we remove this collection from the second-level cache
-		dirty = true;
+		dirty();
 	}
 
 	/**
@@ -600,14 +610,17 @@ public abstract class AbstractPersistentCollection<E> implements Serializable, P
 	@Override
 	public boolean afterInitialize() {
 		setInitialized();
-		//do this bit after setting initialized to true or it will recurse
+		return !hasQueuedOperations();
+	}
+
+	@Override
+	public final void afterInitializationSnapshot() {
+		// Apply only after CollectionEntry captured the database-loaded state.
+		// Setting initialized first prevents a queued operation from recursively
+		// triggering collection initialization.
 		if ( hasQueuedOperations() ) {
 			performQueuedOperations();
 			cachedSize = -1;
-			return false;
-		}
-		else {
-			return true;
 		}
 	}
 
@@ -868,6 +881,18 @@ public abstract class AbstractPersistentCollection<E> implements Serializable, P
 	@Override
 	public final boolean hasQueuedOperations() {
 		return operationQueue != null;
+	}
+
+	@Override
+	public final List<QueuedCollectionOperation> getQueuedOperations() {
+		if ( operationQueue == null ) {
+			return emptyList();
+		}
+		final var operations = new ArrayList<QueuedCollectionOperation>( operationQueue.size() );
+		for ( int i = 0; i < operationQueue.size(); i++ ) {
+			operations.add( operationQueue.get( i ).toQueuedOperation( i ) );
+		}
+		return List.copyOf( operations );
 	}
 
 	@Override
@@ -1250,6 +1275,8 @@ public abstract class AbstractPersistentCollection<E> implements Serializable, P
 	 */
 	protected interface DelayedOperation<E> {
 		void operate();
+
+		QueuedCollectionOperation toQueuedOperation(int order);
 
 		E getAddedInstance();
 

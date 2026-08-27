@@ -20,6 +20,7 @@ import jakarta.persistence.UniqueConstraint;
 import jakarta.annotation.Nullable;
 import org.hibernate.AnnotationException;
 import org.hibernate.annotations.NotFoundAction;
+import org.hibernate.annotations.OptimisticLockType;
 import org.hibernate.annotations.Parameter;
 import org.hibernate.annotations.SecondaryRow;
 import org.hibernate.boot.internal.LimitedCollectionClassification;
@@ -110,6 +111,7 @@ import org.hibernate.boot.models.annotations.internal.JdbcTypeAnnotation;
 import org.hibernate.boot.models.annotations.internal.JdbcTypeCodeAnnotation;
 import org.hibernate.boot.models.annotations.internal.NaturalIdCacheAnnotation;
 import org.hibernate.boot.models.annotations.internal.NotFoundAnnotation;
+import org.hibernate.boot.models.annotations.internal.OptimisticLockingAnnotation;
 import org.hibernate.boot.models.annotations.internal.ParameterAnnotation;
 import org.hibernate.boot.models.annotations.internal.PrimaryKeyJoinColumnJpaAnnotation;
 import org.hibernate.boot.models.annotations.internal.PrimaryKeyJoinColumnsJpaAnnotation;
@@ -230,6 +232,26 @@ public class XmlAnnotationHelper {
 					HibernateAnnotations.IMMUTABLE,
 					xmlDocumentContext.getModelBuildingContext()
 			);
+		}
+		if ( jaxbEntity.isDynamicInsert() != null && jaxbEntity.isDynamicInsert() ) {
+			classDetails.applyAnnotationUsage(
+					HibernateAnnotations.DYNAMIC_INSERT,
+					xmlDocumentContext.getModelBuildingContext()
+			);
+		}
+		if ( jaxbEntity.isDynamicUpdate() != null && jaxbEntity.isDynamicUpdate() ) {
+			classDetails.applyAnnotationUsage(
+					HibernateAnnotations.DYNAMIC_UPDATE,
+					xmlDocumentContext.getModelBuildingContext()
+			);
+		}
+		if ( jaxbEntity.getOptimisticLocking() != null ) {
+			final OptimisticLockingAnnotation optimisticLocking =
+					(OptimisticLockingAnnotation) classDetails.applyAnnotationUsage(
+							HibernateAnnotations.OPTIMISTIC_LOCKING,
+							xmlDocumentContext.getModelBuildingContext()
+					);
+			optimisticLocking.type( OptimisticLockType.valueOf( jaxbEntity.getOptimisticLocking().name() ) );
 		}
 	}
 

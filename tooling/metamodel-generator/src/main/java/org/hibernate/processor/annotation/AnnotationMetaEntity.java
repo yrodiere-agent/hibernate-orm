@@ -101,6 +101,7 @@ import static org.hibernate.processor.util.TypeUtils.getAnnotationMirror;
 import static org.hibernate.processor.util.TypeUtils.getAnnotationValue;
 import static org.hibernate.processor.util.TypeUtils.getInheritedAnnotationMirror;
 import static org.hibernate.processor.util.TypeUtils.hasAnnotation;
+import static org.hibernate.processor.util.TypeUtils.isInheritedAnnotation;
 import static org.hibernate.processor.util.TypeUtils.implementsInterface;
 import static org.hibernate.processor.util.TypeUtils.isPluralAttribute;
 import static org.hibernate.processor.util.TypeUtils.primitiveClassMatchesKind;
@@ -720,8 +721,9 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		// turn the name into lowercase
 		// FIXME: this is wrong for types like STEFQueries
 		final var propertyName = decapitalize( name );
+		final var qualifiedName = ((TypeElement) enclosedElement).getQualifiedName().toString();
 		members.put( propertyName,
-				new CDIAccessorMetaAttribute( this, propertyName, name ) );
+				new CDIAccessorMetaAttribute( this, propertyName, qualifiedName ) );
 		// keep it
 		return true;
 	}
@@ -864,7 +866,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		final var finalPrimaryEntity = primaryEntity;
 		if ( repositoryType != null ) {
 			addRepositoryAccessor( repositoryAccessor,
-					repositoryType.getSimpleName().toString() );
+					((TypeElement) repositoryType).getQualifiedName().toString() );
 		}
 		else if ( idType != null && finalPrimaryEntity != null ) {
 			final var repositoryTypeName =
@@ -1209,7 +1211,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			&& hasAnnotation( element, ENTITY )
 			&& context.isDataEventPackageAvailable() // events
 			&& context.addInjectAnnotation() // @Inject
-			&& context.addDependentAnnotation(); // CDI
+			&& context.isCdiAvailable(); // CDI
 	}
 
 	void addEventBus() {
@@ -1235,7 +1237,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		return jakartaDataRepository
 			&& !quarkusInjection
 			&& !springInjection
-			&& context.addDependentAnnotation();
+			&& context.isCdiAvailable();
 	}
 
 	private @Nullable ExecutableElement findSessionGetter(TypeElement type) {
@@ -4195,8 +4197,14 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 		if ( typeArgument.getKind() == TypeKind.WILDCARD ) {
 			final var wildcardType = (WildcardType) typeArgument;
 			final var superBound = wildcardType.getSuperBound();
-			return superBound != null
-				&& types.isAssignable( attributeType, boxedType( superBound ) );
+			if ( superBound != null ) {
+				return types.isAssignable( attributeType, boxedType( superBound ) );
+			}
+			else {
+				final var extendsBound = wildcardType.getExtendsBound();
+				return extendsBound != null
+					&& types.isAssignable( boxedType( extendsBound ), attributeType );
+			}
 		}
 		else {
 			return types.isSameType( boxedType( typeArgument ), attributeType );
@@ -4959,6 +4967,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 			AnnotationValue value,
 			String hql,
 			List<String> paramNames, List<String> paramTypes) {
+		final var dialect = context.determineDialect( method );
 		final var statement =
 				Validation.validate(
 						hql,
@@ -4966,7 +4975,7 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 						true,
 						new ErrorHandler( context, isLocal( method ) ? method : element, mirror, value, hql ),
 						ProcessorSessionFactory.create( context.getProcessingEnvironment(),
-								context.getEntityNameMappings(), context.getEnumTypesByValue(), context.isIndexing(), method )
+								context.getEntityNameMappings(), context.getEnumTypesByValue(), context.isIndexing(), method, dialect )
 				);
 		if ( statement != null ) {
 			if ( statement instanceof SqmSelectStatement<?> selectStatement ) {
@@ -5900,11 +5909,10 @@ public class AnnotationMetaEntity extends AnnotationMeta {
 
 	@Override
 	public List<AnnotationMirror> inheritedAnnotations() {
-		if ( jakartaDataRepository ) {
+		if ( repository ) {
 			List<AnnotationMirror> list = new ArrayList<>();
 			for ( var annotationMirror : element.getAnnotationMirrors() ) {
-				if ( hasAnnotation( annotationMirror.getAnnotationType().asElement(),
-						"jakarta.interceptor.InterceptorBinding" ) ) {
+				if ( isInheritedAnnotation( annotationMirror, context ) ) {
 					list.add( annotationMirror );
 				}
 			}

@@ -11,7 +11,6 @@ import org.hibernate.HibernateException;
 import org.hibernate.boot.Metadata;
 import org.hibernate.cfg.SchemaToolingSettings;
 import org.hibernate.boot.registry.classloading.spi.ClassLoaderService;
-import org.hibernate.boot.spi.BootstrapContext;
 import org.hibernate.engine.config.spi.ConfigurationService;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.integrator.spi.Integrator;
@@ -89,7 +88,7 @@ public class BeanValidationIntegrator implements Integrator {
 	@Override
 	public void integrate(
 			Metadata metadata,
-			BootstrapContext bootstrapContext,
+			Integrator.Context context,
 			SessionFactoryImplementor sessionFactory) {
 		final var serviceRegistry = sessionFactory.getServiceRegistry();
 		// IMPL NOTE: see the comments on ActivationContext.getValidationModes() as to why this is multi-valued...
@@ -189,11 +188,6 @@ public class BeanValidationIntegrator implements Integrator {
 		catch (Exception e) {
 			throw new HibernateException( "Unable to load TypeSafeActivator class", e );
 		}
-	}
-
-	@Override
-	public void disintegrate(SessionFactoryImplementor sessionFactory, SessionFactoryServiceRegistry serviceRegistry) {
-		// nothing to do here afaik
 	}
 
 	private record ActivationContextImpl(

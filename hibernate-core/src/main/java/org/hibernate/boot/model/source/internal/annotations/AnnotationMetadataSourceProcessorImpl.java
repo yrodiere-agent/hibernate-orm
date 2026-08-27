@@ -13,6 +13,7 @@ import jakarta.persistence.FetchType;
 import org.hibernate.MappingException;
 import org.hibernate.annotations.FetchMode;
 import org.hibernate.boot.internal.MetadataBuildingContextRootImpl;
+import org.hibernate.boot.model.IdentifierGeneratorDefinition;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbEntityMappingsImpl;
 import org.hibernate.boot.model.process.spi.ManagedResources;
 import org.hibernate.boot.model.source.spi.MetadataSourceProcessor;
@@ -26,7 +27,9 @@ import org.hibernate.models.spi.ClassDetails;
 import static org.hibernate.boot.model.internal.AnnotationBinder.bindClass;
 import static org.hibernate.boot.model.internal.AnnotationBinder.bindDefaults;
 import static org.hibernate.boot.model.internal.AnnotationBinder.bindFetchProfilesForClass;
+import static org.hibernate.boot.model.internal.AnnotationBinder.bindFetchProfilesForModule;
 import static org.hibernate.boot.model.internal.AnnotationBinder.bindFetchProfilesForPackage;
+import static org.hibernate.boot.model.internal.AnnotationBinder.bindModule;
 import static org.hibernate.boot.model.internal.AnnotationBinder.bindPackage;
 import static org.hibernate.boot.model.internal.AnnotationBinder.buildInheritanceStates;
 import static org.hibernate.boot.model.internal.EntityBinder.isEntity;
@@ -48,6 +51,7 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 	private final MetadataBuildingContextRootImpl rootMetadataBuildingContext;
 	private final ClassLoaderService classLoaderService;
 
+	private final LinkedHashSet<String> annotatedModuleNames = new LinkedHashSet<>();
 	private final LinkedHashSet<String> annotatedPackages = new LinkedHashSet<>();
 	private final LinkedHashSet<ClassDetails> knownClasses = new LinkedHashSet<>();
 
@@ -76,6 +80,7 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 			knownClasses.add( classDetailsRegistry.resolveClassDetails( annotatedClass.getName() ) );
 		}
 
+		annotatedModuleNames.addAll( managedResources.getAnnotatedModuleNames() );
 		annotatedPackages.addAll( managedResources.getAnnotatedPackageNames() );
 	}
 
@@ -116,6 +121,9 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 				.adjustDefaultNamespace( defaults.getImplicitCatalogName(), defaults.getImplicitSchemaName() );
 
 		bindDefaults( rootMetadataBuildingContext );
+		for ( String annotatedModuleName : annotatedModuleNames ) {
+			bindModule( annotatedModuleName, rootMetadataBuildingContext );
+		}
 		for ( String annotatedPackage : annotatedPackages ) {
 			bindPackage( classLoaderService, annotatedPackage, rootMetadataBuildingContext );
 		}
@@ -134,6 +142,10 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 
 	@Override
 	public void processQueryRenames() {
+		final var importedRenames = domainModelSource.getGlobalRegistrations().getImportedRenames();
+		for ( var entry : importedRenames.entrySet() ) {
+			rootMetadataBuildingContext.getMetadataCollector().addImport( entry.getKey(), entry.getValue() );
+		}
 	}
 
 	@Override
@@ -146,6 +158,15 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 
 	@Override
 	public void processIdentifierGenerators() {
+		final var collector = rootMetadataBuildingContext.getMetadataCollector();
+		for ( var registration : domainModelSource.getGlobalRegistrations()
+				.getGenericGeneratorRegistrations().values() ) {
+			collector.addIdentifierGenerator( new IdentifierGeneratorDefinition(
+					registration.name(),
+					registration.strategy(),
+					registration.parameters()
+			) );
+		}
 	}
 
 	@Override
@@ -264,6 +285,9 @@ public class AnnotationMetadataSourceProcessorImpl implements MetadataSourceProc
 
 	@Override
 	public void postProcessEntityHierarchies() {
+		for ( String annotatedModuleName : annotatedModuleNames ) {
+			bindFetchProfilesForModule( annotatedModuleName, rootMetadataBuildingContext );
+		}
 		for ( String annotatedPackage : annotatedPackages ) {
 			bindFetchProfilesForPackage( annotatedPackage, rootMetadataBuildingContext );
 		}

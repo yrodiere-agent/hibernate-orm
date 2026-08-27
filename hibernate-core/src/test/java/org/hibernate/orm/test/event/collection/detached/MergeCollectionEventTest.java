@@ -4,7 +4,6 @@
  */
 package org.hibernate.orm.test.event.collection.detached;
 
-import org.hibernate.action.queue.spi.QueueType;
 import org.hibernate.boot.Metadata;
 import org.hibernate.boot.spi.BootstrapContext;
 import org.hibernate.cfg.AvailableSettings;
@@ -17,6 +16,7 @@ import org.hibernate.event.spi.PreCollectionRecreateEvent;
 import org.hibernate.event.spi.PreCollectionRemoveEvent;
 import org.hibernate.event.spi.PreCollectionUpdateEvent;
 import org.hibernate.integrator.spi.Integrator;
+import org.hibernate.orm.test.event.collection.EventAnalyzer;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
 import org.hibernate.testing.orm.junit.BootstrapServiceRegistry;
 import org.hibernate.testing.orm.junit.DomainModel;
@@ -98,6 +98,28 @@ public class MergeCollectionEventTest {
 
 		listener.reset();
 
+		Character paul2 = new Character( 3, "Paul Atreides 2" );
+		scope.inTransaction( s -> {
+			s.persist( paul2 );
+		} );
+
+		assertEquals( 2, listener.getEventEntryList().size() );
+		checkListener( 0, PreCollectionRecreateEvent.class, paul2, Collections.EMPTY_LIST );
+		checkListener( 1, PostCollectionRecreateEvent.class, paul2, Collections.EMPTY_LIST );
+
+		listener.reset();
+
+		Character paulo2 = new Character( 4, "Paulo Atreides 2" );
+		scope.inTransaction( s -> {
+			s.persist( paulo2 );
+		} );
+
+		assertEquals( 2, listener.getEventEntryList().size() );
+		checkListener( 0, PreCollectionRecreateEvent.class, paulo2, Collections.EMPTY_LIST );
+		checkListener( 1, PostCollectionRecreateEvent.class, paulo2, Collections.EMPTY_LIST );
+
+		listener.reset();
+
 		Alias alias1 = new Alias( 1, "Paul Muad'Dib" );
 		scope.inTransaction( s -> {
 			s.persist( alias1 );
@@ -132,7 +154,7 @@ public class MergeCollectionEventTest {
 		paulo.associateAlias( alias2 );
 
 		scope.inTransaction( s -> {
-			s.merge( alias1 );
+			Alias managedAlias1 = s.merge( alias1 );
 
 			assertEquals( 0, listener.getEventEntryList().size() );
 
@@ -148,17 +170,9 @@ public class MergeCollectionEventTest {
 			}
 
 			assertEquals( 8, listener.getEventEntryList().size() ); // 4 collections x 2 events per
-			// Event ordering differs between ActionQueue implementations
-			if ( isGraphBasedActionQueue( scope ) ) {
-				// Graph-based: all PRE events, then all POST events
-				checkListenerGraph( 0, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 1, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 2, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 3, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 4, PostCollectionUpdateEvent.class );
-				checkListenerGraph( 5, PostCollectionUpdateEvent.class );
-				checkListenerGraph( 6, PostCollectionUpdateEvent.class );
-				checkListenerGraph( 7, PostCollectionUpdateEvent.class );
+			// Shared preparation may separate pre- and post-events
+			if ( usesSharedCollectionLifecyclePreparation() ) {
+				checkGraphPairs( listener, EventAnalyzer.Phase.UPDATE, 4 );
 			}
 			else {
 				// Legacy: PRE/POST paired per collection
@@ -177,29 +191,34 @@ public class MergeCollectionEventTest {
 
 			listener.reset();
 
-			s.merge( alias2 );
+			Alias managedAlias2 = s.merge( alias2 );
 
 			assertEquals( 0, listener.getEventEntryList().size() );
 
 			s.flush();
 
+			// Data didn't change compared to snapshot, so we get no events
+			assertEquals( 0, listener.getEventEntryList().size() );
+
+			Character managedPaul2 = s.find( Character.class, paul2.getId() );
+			managedPaul2.associateAlias( managedAlias1 );
+			managedPaul2.associateAlias( managedAlias2 );
+
+			Character managedPaulo2 = s.find( Character.class, paulo2.getId() );
+			managedPaulo2.associateAlias( managedAlias1 );
+			managedPaulo2.associateAlias( managedAlias2 );
+
+			s.flush();
+
 			assertEquals( 8, listener.getEventEntryList().size() ); // 4 collections x 2 events per
-			// Event ordering differs between ActionQueue implementations
-			if ( isGraphBasedActionQueue( scope ) ) {
-				// Graph-based: all PRE events, then all POST events
-				checkListenerGraph( 0, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 1, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 2, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 3, PreCollectionUpdateEvent.class );
-				checkListenerGraph( 4, PostCollectionUpdateEvent.class );
-				checkListenerGraph( 5, PostCollectionUpdateEvent.class );
-				checkListenerGraph( 6, PostCollectionUpdateEvent.class );
-				checkListenerGraph( 7, PostCollectionUpdateEvent.class );
+			// Shared preparation may separate pre- and post-events
+			if ( usesSharedCollectionLifecyclePreparation() ) {
+				checkGraphPairs( listener, EventAnalyzer.Phase.UPDATE, 4 );
 			}
 			else {
 				// Legacy: PRE/POST paired per collection
 				checkListener( 0, PreCollectionUpdateEvent.class, alias1, alias1CharactersSnapshot );
-				checkListener( 1, PostCollectionUpdateEvent.class, alias1, alias1CharactersSnapshot );
+				checkListener( 1, PostCollectionUpdateEvent.class, alias1, alias1.getCharacters() );
 //		checkListener( 2, PreCollectionUpdateEvent.class, paul, Collections.EMPTY_LIST );
 //		checkListener( 3, PostCollectionUpdateEvent.class, paul, paul.getAliases() );
 				checkListener( 4, PreCollectionUpdateEvent.class, alias2, alias2CharactersSnapshot );
@@ -220,6 +239,19 @@ public class MergeCollectionEventTest {
 
 	}
 
+	private void checkGraphPairs(
+			AggregatedCollectionEventListener listener,
+			EventAnalyzer.Phase phase,
+			int expectedPairCount) {
+		final var events = listener.getEventEntryList().stream()
+				.map( AggregatedCollectionEventListener.EventEntry::getEvent )
+				.toList();
+		final var analysis = EventAnalyzer.matchEvents( events );
+		assertEquals( 0, analysis.unmatchedPre().size() );
+		assertEquals( 0, analysis.unmatchedPost().size() );
+		assertEquals( expectedPairCount, analysis.pairs().get( phase ).size() );
+	}
+
 	private void checkListenerGraph(int index, Class<? extends AbstractCollectionEvent> expectedEventType) {
 		final AggregatedCollectionEventListener.EventEntry eventEntry
 				= collectionListenerIntegrator.getListener().getEventEntryList().get( index );
@@ -229,8 +261,8 @@ public class MergeCollectionEventTest {
 	}
 
 
-	private boolean isGraphBasedActionQueue(SessionFactoryScope scope) {
-		return scope.getSessionFactory().getActionQueueFactory().getConfiguredQueueType() == QueueType.GRAPH;
+	private boolean usesSharedCollectionLifecyclePreparation() {
+		return true;
 	}
 
 	protected void checkListener(

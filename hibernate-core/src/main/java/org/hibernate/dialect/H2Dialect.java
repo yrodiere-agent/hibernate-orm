@@ -1195,4 +1195,14 @@ public class H2Dialect extends Dialect {
 		return new String[] { "drop domain if exists " + name };
 	}
 
+	@Override
+	public boolean supportsSchemaIfNotExists() {
+		return true;
+	}
+
+	@Override
+	public boolean supportsSchemaIfExists() {
+		return true;
+	}
+
 }

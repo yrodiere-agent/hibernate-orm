@@ -26,9 +26,11 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbCompositeUserTypeRegistrationImpl
 import org.hibernate.boot.jaxb.mapping.spi.JaxbEmbeddableImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbEmbeddedImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbEntityImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbHqlImportImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbEntityMappingsImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbIdImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToManyImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbMappedSuperclassImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToOneImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbOneToManyImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbOneToOneImpl;
@@ -51,6 +53,7 @@ import jakarta.xml.bind.JAXBException;
 
 import static java.util.Collections.singletonList;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hibernate.orm.test.boot.jaxb.JaxbHelper.withStaxEventReader;
 
 /**
@@ -212,6 +215,48 @@ public class HbmTransformationJaxbTests {
 			final JaxbBasicImpl basicAttr = embeddable.getAttributes().getBasicAttributes().get( 0 );
 			assertThat( basicAttr.getName() ).isEqualTo( "generated" );
 			assertThat( basicAttr.getGenerated() ).isEqualTo( GenerationTiming.ALWAYS );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20723" )
+	public void testJoinedSubclassForeignKeyNameWithNestedColumn(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/joined-subclass-fk/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "JoinedSubclassFkChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( childEntity.getPrimaryKeyJoinColumns() ).hasSize( 1 );
+
+			final var joinColumn = childEntity.getPrimaryKeyJoinColumns().get( 0 );
+			assertThat( joinColumn.getName() )
+					.as( "Column name from nested <column> element should be preserved" )
+					.isEqualTo( "CHILD_BASE_ID" );
+			assertThat( joinColumn.getForeignKey() )
+					.as( "Foreign key should be set" )
+					.isNotNull();
+			assertThat( joinColumn.getForeignKey().getName() )
+					.as( "Foreign key name from <key foreign-key='...'> should be preserved" )
+					.isEqualTo( "FK_CHILD_BASE" );
+		} );
+	}
+
+	@Test
+	public void testJoinedSubclassMultipleKeyColumns(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/joined-subclass-composite-key/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "JoinedSubclassCompositeChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( childEntity.getPrimaryKeyJoinColumns() )
+					.as( "All <column> elements in the composite <key> should be transferred" )
+					.hasSize( 2 );
+			assertThat( childEntity.getPrimaryKeyJoinColumns().get( 0 ).getName() )
+					.isEqualTo( "CHILD_TENANT_ID" );
+			assertThat( childEntity.getPrimaryKeyJoinColumns().get( 1 ).getName() )
+					.isEqualTo( "CHILD_BASE_ID" );
 		} );
 	}
 
@@ -777,6 +822,124 @@ public class HbmTransformationJaxbTests {
 		} );
 	}
 
+	@Test
+	@JiraKey( "HHH-20709" )
+	public void testCollectionFetchJoinLazyTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/collection-fetch-join-lazy/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl userEntity = transformed.getEntities().stream()
+					.filter( e -> "User".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( userEntity.getAttributes().getOneToManyAttributes() ).hasSize( 1 );
+
+			final JaxbOneToManyImpl emailAddresses = userEntity.getAttributes().getOneToManyAttributes().get( 0 );
+			assertThat( emailAddresses.getName() ).isEqualTo( "emailAddresses" );
+			assertThat( emailAddresses.getFetchMode() )
+					.as( "Lazy collection with fetch='join' should not have fetch-mode=JOIN" )
+					.isNotEqualTo( org.hibernate.boot.jaxb.mapping.spi.JaxbPluralFetchModeImpl.JOIN );
+			assertThat( emailAddresses.getFetch() )
+					.as( "Collection with default lazy='true' should have fetch=LAZY" )
+					.isEqualTo( jakarta.persistence.FetchType.LAZY );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20712" )
+	public void testOnDeleteCascadeTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/on-delete-toone/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "Child".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( childEntity.getAttributes().getManyToOneAttributes() ).hasSize( 1 );
+
+			final JaxbManyToOneImpl parentManyToOne = childEntity.getAttributes().getManyToOneAttributes().get( 0 );
+			assertThat( parentManyToOne.getName() ).isEqualTo( "parent" );
+			assertThat( parentManyToOne.getOnDelete() )
+					.as( "many-to-one with on-delete='cascade' should have on-delete=CASCADE" )
+					.isEqualTo( org.hibernate.annotations.OnDeleteAction.CASCADE );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20709" )
+	public void testCollectionFetchJoinEagerTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/collection-fetch-join-eager/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl userEntity = transformed.getEntities().stream()
+					.filter( e -> "User".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( userEntity.getAttributes().getOneToManyAttributes() ).hasSize( 1 );
+
+			final JaxbOneToManyImpl emailAddresses = userEntity.getAttributes().getOneToManyAttributes().get( 0 );
+			assertThat( emailAddresses.getName() ).isEqualTo( "emailAddresses" );
+			assertThat( emailAddresses.getFetchMode() )
+					.as( "Eager collection with fetch='join' should have fetch-mode=JOIN" )
+					.isEqualTo( org.hibernate.boot.jaxb.mapping.spi.JaxbPluralFetchModeImpl.JOIN );
+			assertThat( emailAddresses.getFetch() )
+					.as( "Collection with lazy='false' should have fetch=EAGER" )
+					.isEqualTo( jakarta.persistence.FetchType.EAGER );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20711" )
+	public void testIdClassTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/id-class/hbm.xml", scope, (transformed) -> {
+			final JaxbEntityImpl customerEntity = transformed.getEntities().stream()
+					.filter( e -> "Customer".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( customerEntity.getIdClass() )
+					.as( "Entity with composite-id class should have id-class" )
+					.isNotNull();
+			assertThat( customerEntity.getIdClass().getClazz() )
+					.as( "id-class should reference the fully qualified CustomerId class" )
+					.isEqualTo( "org.hibernate.orm.test.idclass.CustomerId" );
+
+			assertThat( customerEntity.getAttributes().getIdAttributes() )
+					.as( "Entity should have 2 id attributes" )
+					.hasSize( 2 );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20791" )
+	public void testEmbeddedIdGeneratorTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/embedded-id-generator/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 1 );
+
+			final JaxbEntityImpl entity = transformed.getEntities().get( 0 );
+			final var embeddedId = entity.getAttributes().getEmbeddedIdAttribute();
+			assertThat( embeddedId )
+					.as( "Aggregated composite-id should be transformed to an embedded-id" )
+					.isNotNull();
+			assertThat( embeddedId.getName() ).isEqualTo( "id" );
+
+			assertThat( embeddedId.getGenericGenerator() )
+					.as( "The <generator> on <composite-id> should be transferred to the embedded-id" )
+					.isNotNull();
+			assertThat( embeddedId.getGenericGenerator().getClazz() )
+					.isEqualTo( "org.hibernate.orm.test.boot.jaxb.mapping.compositeidgenerator.OrderIdGenerator" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20811" )
+	public void testExplicitPolymorphismIsUnsupported(ServiceRegistryScope scope) {
+		// The <class polymorphism="explicit"> attribute has no equivalent in mapping.xsd,
+		// so the transformer must route it through handleUnsupported.
+		assertThatThrownBy( () ->
+				transformAndVerify( "xml/jaxb/mapping/polymorphism-explicit/hbm.xml", scope, transformed -> {} )
+		)
+				.isInstanceOf( UnsupportedOperationException.class )
+				.hasMessageContaining( "polymorphism" );
+	}
+
 	private void transformAndVerify(
 			String resourceName,
 			ServiceRegistryScope scope,
@@ -1158,6 +1321,77 @@ public class HbmTransformationJaxbTests {
 	}
 
 	@Test
+	@JiraKey( "HHH-20726" )
+	public void testDiscriminatorColumnLengthForLongValues(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/discriminator-length/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl baseEntity = transformed.getEntities().stream()
+					.filter( e -> "DiscriminatorLengthBase".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( baseEntity.getDiscriminatorColumn() ).isNotNull();
+			assertThat( baseEntity.getDiscriminatorColumn().getLength() )
+					.as( "Discriminator column length should accommodate the longest discriminator value" )
+					.isGreaterThanOrEqualTo(
+							"org.hibernate.orm.test.boot.jaxb.mapping.DiscriminatorLengthChild".length()
+					);
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20724" )
+	public void testSubclassJoinForeignKeyNameTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/subclass-join-fk/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "SubclassJoinFkChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( childEntity.getSecondaryTables() ).hasSize( 1 );
+
+			final var secondaryTable = childEntity.getSecondaryTables().get( 0 );
+			assertThat( secondaryTable.getName() ).isEqualTo( "SJ_FK_CHILD" );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn() ).hasSize( 1 );
+
+			final var joinColumn = secondaryTable.getPrimaryKeyJoinColumn().get( 0 );
+			assertThat( joinColumn.getName() )
+					.isEqualTo( "CHILD_BASE_ID" );
+			assertThat( joinColumn.getForeignKey() )
+					.as( "Foreign key should be set on the join column from <key foreign-key='...'>" )
+					.isNotNull();
+			assertThat( joinColumn.getForeignKey().getName() )
+					.as( "Foreign key name should be preserved" )
+					.isEqualTo( "FK_CHILD_SJ" );
+		} );
+	}
+
+	@Test
+	public void testSecondaryTableMultipleKeyColumns(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/subclass-join-composite-key/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl childEntity = transformed.getEntities().stream()
+					.filter( e -> "SubclassJoinCompositeChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( childEntity.getSecondaryTables() ).hasSize( 1 );
+
+			final var secondaryTable = childEntity.getSecondaryTables().get( 0 );
+			assertThat( secondaryTable.getName() ).isEqualTo( "SJ_CK_CHILD" );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn() )
+					.as( "All <column> elements in the composite <key> should be transferred" )
+					.hasSize( 2 );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn().get( 0 ).getName() )
+					.isEqualTo( "CHILD_COL_1" );
+			assertThat( secondaryTable.getPrimaryKeyJoinColumn().get( 1 ).getName() )
+					.isEqualTo( "CHILD_COL_2" );
+		} );
+	}
+
+	@Test
 	@JiraKey( "HHH-20687" )
 	public void testSharedPkOneToOneTransformation(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/one-to-one-shared-pk/hbm.xml", scope, transformed -> {
@@ -1217,6 +1451,333 @@ public class HbmTransformationJaxbTests {
 	}
 
 	@Test
+	@JiraKey( "HHH-20715" )
+	public void testUnmappedSuperclassGeneratesMappedSuperclass(ServiceRegistryScope scope) {
+		// ConcreteEntity and AnotherEntity both extend AbstractBase (a plain Java class, not an entity).
+		// The hbm.xml maps properties (id, version, name, relatedBase) declared on AbstractBase.
+		// The transformer should generate a single <mapped-superclass> for AbstractBase,
+		// move the inherited attributes there, and mark unmapped superclass properties as transient.
+		transformAndVerify( "xml/jaxb/mapping/unmapped-superclass/hbm.xml", scope, (transformed) -> {
+			// A single mapped-superclass should be generated even though two entities share the same superclass
+			assertThat( transformed.getMappedSuperclasses() )
+					.as( "Exactly one <mapped-superclass> should be generated for the shared AbstractBase" )
+					.hasSize( 1 );
+
+			final JaxbMappedSuperclassImpl mappedSuperclass = transformed.getMappedSuperclasses().get( 0 );
+			assertThat( mappedSuperclass.getClazz() )
+					.isEqualTo( "org.hibernate.orm.test.boot.jaxb.mapping.unmappedsuperclass.AbstractBase" );
+			assertThat( mappedSuperclass.isMetadataComplete() ).isTrue();
+
+			final var superAttrs = mappedSuperclass.getAttributes();
+
+			// Id attribute should be on the mapped-superclass
+			assertThat( superAttrs.getIdAttributes() )
+					.extracting( JaxbIdImpl::getName )
+					.containsExactly( "id" );
+
+			// Version attribute should be on the mapped-superclass
+			assertThat( superAttrs.getVersion() )
+					.as( "version should be moved to the mapped-superclass" )
+					.isNotNull();
+			assertThat( superAttrs.getVersion().getName() )
+					.isEqualTo( "version" );
+
+			// Basic attribute 'name' should be on the mapped-superclass
+			assertThat( superAttrs.getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.containsExactly( "name" );
+
+			// Many-to-one attribute 'relatedBase' should be on the mapped-superclass
+			assertThat( superAttrs.getManyToOneAttributes() )
+					.extracting( JaxbManyToOneImpl::getName )
+					.containsExactly( "relatedBase" );
+
+			// Unmapped property should be declared as transient
+			assertThat( superAttrs.getTransients() )
+					.extracting( JaxbTransientImpl::getName )
+					.contains( "unmappedProperty" );
+
+			// --- ConcreteEntity assertions ---
+			final JaxbEntityImpl concreteEntity = transformed.getEntities().stream()
+					.filter( e -> "ConcreteEntity".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			// Inherited attributes should NOT be on the entity
+			assertThat( concreteEntity.getAttributes().getIdAttributes() )
+					.as( "Entity should not have id — inherited from mapped-superclass" )
+					.isEmpty();
+			assertThat( concreteEntity.getAttributes().getVersion() )
+					.as( "Entity should not have version — inherited from mapped-superclass" )
+					.isNull();
+			assertThat( concreteEntity.getAttributes().getManyToOneAttributes() )
+					.as( "Entity should not have relatedBase — inherited from mapped-superclass" )
+					.isEmpty();
+
+			// Entity's own attribute should remain
+			assertThat( concreteEntity.getAttributes().getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.containsExactly( "description" );
+
+			// --- AnotherEntity assertions ---
+			final JaxbEntityImpl anotherEntity = transformed.getEntities().stream()
+					.filter( e -> "AnotherEntity".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			// Inherited attributes should NOT be on the entity
+			assertThat( anotherEntity.getAttributes().getIdAttributes() ).isEmpty();
+			assertThat( anotherEntity.getAttributes().getVersion() ).isNull();
+
+			// Entity's own attribute should remain
+			assertThat( anotherEntity.getAttributes().getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.containsExactly( "code" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20800" )
+	public void testMultiLevelUnmappedSuperclassTransientsAreDeclaredOnly(ServiceRegistryScope scope) {
+		// MultiLevelChild extends MultiLevelMiddle (declares id) extends MultiLevelBase (declares name).
+		// With property access the transformer generates a mapped-superclass for both MultiLevelMiddle
+		// and MultiLevelBase. Because getMethods() returns inherited getters, MultiLevelMiddle used to
+		// get a spurious <transient name="name"/> for the getter inherited from MultiLevelBase — which
+		// then fails member resolution at boot (name is not declared on MultiLevelMiddle).
+		// A generated mapped-superclass must only declare transients for properties it actually declares.
+		transformAndVerify( "xml/jaxb/mapping/multilevel-superclass/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getMappedSuperclasses() )
+					.as( "One mapped-superclass per unmapped Java superclass" )
+					.hasSize( 2 );
+
+			final JaxbMappedSuperclassImpl middle = transformed.getMappedSuperclasses().stream()
+					.filter( ms -> ms.getClazz().endsWith( "MultiLevelMiddle" ) )
+					.findFirst()
+					.orElseThrow();
+
+			// id is declared on MultiLevelMiddle → it moves here
+			assertThat( middle.getAttributes().getIdAttributes() )
+					.extracting( JaxbIdImpl::getName )
+					.containsExactly( "id" );
+
+			// name is declared on MultiLevelBase, not MultiLevelMiddle → no transient here
+			assertThat( middle.getAttributes().getTransients() )
+					.extracting( JaxbTransientImpl::getName )
+					.as( "'name' is inherited from MultiLevelBase and must not be transient on MultiLevelMiddle" )
+					.doesNotContain( "name" );
+
+			final JaxbMappedSuperclassImpl base = transformed.getMappedSuperclasses().stream()
+					.filter( ms -> ms.getClazz().endsWith( "MultiLevelBase" ) )
+					.findFirst()
+					.orElseThrow();
+
+			// name is declared on and mapped for MultiLevelBase → it moves here as a basic attribute
+			assertThat( base.getAttributes().getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.containsExactly( "name" );
+
+			// --- MultiLevelChild: keeps only its own 'data' ---
+			final JaxbEntityImpl child = transformed.getEntities().stream()
+					.filter( e -> "MultiLevelChild".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( child.getAttributes().getIdAttributes() )
+					.as( "id is inherited from the mapped-superclass" )
+					.isEmpty();
+			assertThat( child.getAttributes().getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.containsExactly( "data" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20749" )
+	public void testSiblingEntitiesWithDifferentMappings(ServiceRegistryScope scope) {
+		// SiblingEntityA and SiblingEntityB both extend SiblingBase.
+		// Both redeclare 'id' so each keeps its own id on the entity.
+		// Only SiblingEntityA maps 'related' (and redeclares the field), so
+		// 'related' stays on the entity and becomes transient on the superclass.
+		// 'name' is shared by both — it moves to the mapped-superclass.
+		transformAndVerify( "xml/jaxb/mapping/sibling-mapping/hbm.xml", scope, transformed -> {
+			// One mapped-superclass for SiblingBase
+			assertThat( transformed.getMappedSuperclasses() )
+					.as( "One <mapped-superclass> should be generated for SiblingBase" )
+					.hasSize( 1 );
+
+			final JaxbMappedSuperclassImpl mappedSuperclass = transformed.getMappedSuperclasses().get( 0 );
+			assertThat( mappedSuperclass.getClazz() )
+					.endsWith( "SiblingBase" );
+
+			final var superAttrs = mappedSuperclass.getAttributes();
+
+			// 'name' should be on the mapped-superclass (shared by both siblings)
+			assertThat( superAttrs.getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.containsExactly( "name" );
+
+			// 'id' and 'related' should be transient on the superclass
+			assertThat( superAttrs.getTransients() )
+					.extracting( JaxbTransientImpl::getName )
+					.contains( "id", "related" );
+
+			// No id on the superclass (both entities redeclare the field)
+			assertThat( superAttrs.getIdAttributes() )
+					.as( "Superclass should not have an id — both entities redeclare the field" )
+					.isEmpty();
+
+			// --- SiblingEntityA: has its own id and many-to-one related ---
+			final JaxbEntityImpl entityA = transformed.getEntities().stream()
+					.filter( e -> "SiblingEntityA".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( entityA.getAttributes().getIdAttributes() )
+					.extracting( JaxbIdImpl::getName )
+					.containsExactly( "id" );
+
+			assertThat( entityA.getAttributes().getManyToOneAttributes() )
+					.extracting( JaxbManyToOneImpl::getName )
+					.containsExactly( "related" );
+
+			// --- SiblingEntityB: has its own id, no 'related' ---
+			final JaxbEntityImpl entityB = transformed.getEntities().stream()
+					.filter( e -> "SiblingEntityB".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( entityB.getAttributes().getIdAttributes() )
+					.extracting( JaxbIdImpl::getName )
+					.containsExactly( "id" );
+
+			assertThat( entityB.getAttributes().getManyToOneAttributes() )
+					.as( "SiblingEntityB should not have 'related' — it was not mapped in the hbm.xml" )
+					.isEmpty();
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20749" )
+	public void testSiblingEntitiesWithConflictingIdStrategies(ServiceRegistryScope scope) {
+		// ConflictEntityA redeclares 'id' field → keeps its own id (sequence generator).
+		// ConflictEntityB does NOT redeclare 'id' → its id (native generator) moves to
+		// the ConflictBase mapped-superclass. ConflictEntityA then has its own id AND
+		// inherits one from the superclass — which JPA does not allow.
+		// The transformer should detect this and report it as unsupported.
+		assertThatThrownBy( () ->
+				transformAndVerify( "xml/jaxb/mapping/sibling-conflict/hbm.xml", scope, transformed -> {} )
+		)
+				.isInstanceOf( UnsupportedOperationException.class )
+				.hasMessageContaining( "different id generation strategies" );
+	}
+
+	@Test
+	@JiraKey( "HHH-20749" )
+	public void testSiblingEntitiesWithSameIdGeneratorDifferentColumns(ServiceRegistryScope scope) {
+		// OverrideEntityA and OverrideEntityB both extend OverrideBase and both use
+		// the native id generator, but OverrideEntityA maps the id to column "entity_a_id".
+		// OverrideEntityA redeclares the id field, so its id initially stays on the entity.
+		// Since the generators match, the transformer should resolve the overlap by removing
+		// the entity's id and generating an <attribute-override> for the different column.
+		transformAndVerify( "xml/jaxb/mapping/sibling-override/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getMappedSuperclasses() ).hasSize( 1 );
+
+			final JaxbMappedSuperclassImpl mappedSuperclass = transformed.getMappedSuperclasses().get( 0 );
+			assertThat( mappedSuperclass.getClazz() ).endsWith( "OverrideBase" );
+
+			// Id should be on the mapped-superclass (inherited by both entities)
+			assertThat( mappedSuperclass.getAttributes().getIdAttributes() )
+					.extracting( JaxbIdImpl::getName )
+					.containsExactly( "id" );
+
+			// --- OverrideEntityA: no id attributes, but has an attribute-override for the column ---
+			final JaxbEntityImpl entityA = transformed.getEntities().stream()
+					.filter( e -> "OverrideEntityA".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( entityA.getAttributes().getIdAttributes() )
+					.as( "EntityA should not have its own id — resolved by attribute-override" )
+					.isEmpty();
+
+			assertThat( entityA.getAttributeOverrides() )
+					.as( "EntityA should have an attribute-override for the id column" )
+					.hasSize( 1 );
+			assertThat( entityA.getAttributeOverrides().get( 0 ).getName() )
+					.isEqualTo( "id" );
+			assertThat( entityA.getAttributeOverrides().get( 0 ).getColumn().getName() )
+					.isEqualTo( "entity_a_id" );
+
+			// --- OverrideEntityB: no id attributes, no overrides (inherits as-is) ---
+			final JaxbEntityImpl entityB = transformed.getEntities().stream()
+					.filter( e -> "OverrideEntityB".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( entityB.getAttributes().getIdAttributes() )
+					.as( "EntityB should not have its own id — inherits from superclass" )
+					.isEmpty();
+
+			assertThat( entityB.getAttributeOverrides() )
+					.as( "EntityB should have no attribute-overrides" )
+					.isEmpty();
+		} );
+	}
+
+	@Test
+	public void testSiblingEntitiesWithSameGeneratorClassDifferentParameters(ServiceRegistryScope scope) {
+		assertThatThrownBy( () ->
+				transformAndVerify( "xml/jaxb/mapping/sibling-generator-params/hbm.xml", scope, transformed -> {} )
+		)
+				.isInstanceOf( UnsupportedOperationException.class )
+				.hasMessageContaining( "different id generation strategies" );
+	}
+
+	@Test
+	public void testSiblingEntitiesWithSameColumnNameDifferentColumnMetadata(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/sibling-column-override/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl entityA = transformed.getEntities().stream()
+					.filter( e -> "ColumnOverrideEntityA".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( entityA.getAttributes().getBasicAttributes() )
+					.extracting( JaxbBasicImpl::getName )
+					.doesNotContain( "name" );
+
+			final JaxbAttributeOverrideImpl override = entityA.getAttributeOverrides().stream()
+					.filter( candidate -> "name".equals( candidate.getName() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( override.getColumn() ).isNotNull();
+			assertThat( override.getColumn().getName() ).isEqualTo( "shared_name" );
+			assertThat( override.getColumn().getLength() ).isEqualTo( 77 );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20762" )
+	public void testIdBagOrderByTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/idbag-order-by/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 2 );
+
+			final JaxbEntityImpl ownerEntity = transformed.getEntities().stream()
+					.filter( e -> "IdBagOwner".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( ownerEntity.getAttributes().getManyToManyAttributes() ).hasSize( 1 );
+
+			final JaxbManyToManyImpl items = ownerEntity.getAttributes().getManyToManyAttributes().get( 0 );
+			assertThat( items.getName() ).isEqualTo( "items" );
+			assertThat( items.getOrderBy() )
+					.as( "idbag order-by should be transferred to the many-to-many" )
+					.isEqualTo( "itemName asc" );
+		} );
+	}
+
+	@Test
 	@JiraKey( "HHH-20697" )
 	public void testNonAggregatedCompositeIdColumnsNotUnique(ServiceRegistryScope scope) {
 		transformAndVerify( "xml/jaxb/mapping/inverse-composite-key/hbm.xml", scope, transformed -> {
@@ -1234,6 +1795,174 @@ public class HbmTransformationJaxbTests {
 							.isNotEqualTo( true );
 				}
 			}
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20699" )
+	public void testCompositeKeyManyToOneFetchLazy(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/composite-key-many-to-one-fetch/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl addressEntity = transformed.getEntities().stream()
+					.filter( e -> "Address".equals( e.getClazz() ) )
+					.findFirst()
+					.orElseThrow();
+
+			assertThat( addressEntity.getAttributes().getManyToOneAttributes() )
+					.hasSize( 1 );
+
+			final JaxbManyToOneImpl personManyToOne = addressEntity.getAttributes().getManyToOneAttributes().get( 0 );
+			assertThat( personManyToOne.getName() ).isEqualTo( "person" );
+			assertThat( personManyToOne.isId() ).isTrue();
+			assertThat( personManyToOne.getFetch() )
+					.as( "Composite-id key-many-to-one should have fetch=LAZY" )
+					.isEqualTo( jakarta.persistence.FetchType.LAZY );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20751" )
+	public void testIdBagCollectionIdTransformation(ServiceRegistryScope scope) {
+		// An <idbag> with a <collection-id> using a sequence generator should be
+		// transformed into a <many-to-many> with a <collection-id> element containing
+		// the column, generator reference, and target type.
+		transformAndVerify( "xml/jaxb/mapping/idbag-collection-id/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getEntities() ).hasSize( 1 );
+
+			final JaxbEntityImpl entity = transformed.getEntities().get( 0 );
+
+			// The many-to-many should have a collection-id
+			assertThat( entity.getAttributes().getManyToManyAttributes() ).hasSize( 1 );
+			final var manyToMany = entity.getAttributes().getManyToManyAttributes().get( 0 );
+			assertThat( manyToMany.getName() ).isEqualTo( "children" );
+
+			final var collectionId = manyToMany.getCollectionId();
+			assertThat( collectionId )
+					.as( "collection-id should be present on the idbag many-to-many" )
+					.isNotNull();
+
+			// Column
+			assertThat( collectionId.getColumn() ).isNotNull();
+			assertThat( collectionId.getColumn().getName() ).isEqualTo( "bag_id" );
+
+			// Generator reference
+			assertThat( collectionId.getGenerator() ).isNotNull();
+			assertThat( collectionId.getGenerator().getGenerator() )
+					.as( "Generator should reference a named generic-generator" )
+					.isEqualTo( "children-collection-id-generator" );
+
+			// Target type
+			assertThat( collectionId.getTarget() ).isEqualTo( "Long" );
+
+			// The named generic-generator should be registered at entity-mappings level
+			assertThat( transformed.getGenericGenerators() )
+					.as( "A generic-generator for the collection-id should be at entity-mappings level" )
+					.anyMatch( g -> "children-collection-id-generator".equals( g.getName() )
+									&& "sequence".equals( g.getClazz() ) );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20717" )
+	public void testImportWithoutRenameDefaultsToUnqualifiedClassName(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/import-no-rename/hbm.xml", scope, transformed -> {
+			assertThat( transformed.getHqlImports() ).hasSize( 1 );
+			final JaxbHqlImportImpl hqlImport = (JaxbHqlImportImpl) transformed.getHqlImports().get( 0 );
+			assertThat( hqlImport.getClazz() ).isEqualTo( "Animal" );
+			assertThat( hqlImport.getRename() )
+					.as( "When hbm.xml import has no rename, transformer should default to unqualified class name" )
+					.isEqualTo( "Animal" );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20777" )
+	public void testReturnScalarTransformation(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/return-scalar/hbm.xml", scope, transformed -> {
+			// Scalar query should produce an implicit result set mapping
+			assertThat( transformed.getSqlResultSetMappings() ).hasSize( 2 );
+			assertThat( transformed.getNamedNativeQueries() ).hasSize( 2 );
+
+			// --- findScalars: return-scalar with typed and untyped columns ---
+			final var scalarMapping = transformed.getSqlResultSetMappings().stream()
+					.filter( m -> m.getName().startsWith( "findScalars" ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( scalarMapping.getColumnResult() ).hasSize( 3 );
+
+			final var colName = scalarMapping.getColumnResult().stream()
+					.filter( c -> "col_name".equals( c.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( colName.getClazz() )
+					.as( "HBM type 'string' should resolve to java.lang.String" )
+					.isEqualTo( "java.lang.String" );
+
+			final var colValue = scalarMapping.getColumnResult().stream()
+					.filter( c -> "col_value".equals( c.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( colValue.getClazz() )
+					.as( "HBM type 'long' should resolve to long" )
+					.isEqualTo( "long" );
+
+			final var colUntyped = scalarMapping.getColumnResult().stream()
+					.filter( c -> "col_untyped".equals( c.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( colUntyped.getClazz() )
+					.as( "Untyped return-scalar should have null class" )
+					.isNull();
+
+			// The query should reference the implicit result set mapping
+			final var scalarQuery = transformed.getNamedNativeQueries().stream()
+					.filter( q -> "findScalars".equals( q.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( scalarQuery.getResultSetMapping() )
+					.as( "Named native query with return-scalar should reference the implicit result set mapping" )
+					.isEqualTo( scalarMapping.getName() );
+			assertThat( scalarQuery.getQuery() )
+					.as( "Query text should be set (whitespace-only text nodes should be skipped)" )
+					.isNotNull();
+
+			// --- findEntityByName: return with entity-name instead of class ---
+			final var entityMapping = transformed.getSqlResultSetMappings().stream()
+					.filter( m -> m.getName().startsWith( "findEntityByName" ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( entityMapping.getEntityResult() ).hasSize( 1 );
+			assertThat( entityMapping.getEntityResult().get( 0 ).getEntityClass() )
+					.as( "Entity return using entity-name should resolve the entity class" )
+					.isEqualTo( "org.hibernate.orm.test.boot.jaxb.mapping.SimpleEntity" );
+
+			final var entityQuery = transformed.getNamedNativeQueries().stream()
+					.filter( q -> "findEntityByName".equals( q.getName() ) )
+					.findFirst()
+					.orElseThrow();
+			assertThat( entityQuery.getResultSetMapping() )
+					.as( "Named native query with entity return should reference the implicit result set mapping" )
+					.isEqualTo( entityMapping.getName() );
+		} );
+	}
+
+	@Test
+	@JiraKey( "HHH-20703" )
+	public void testCollectionTypeTypedefResolution(ServiceRegistryScope scope) {
+		transformAndVerify( "xml/jaxb/mapping/collection-type-typedef/hbm.xml", scope, transformed -> {
+			final JaxbEntityImpl entity = transformed.getEntities().get( 0 );
+
+			assertThat( entity.getAttributes().getElementCollectionAttributes() ).hasSize( 1 );
+			final var elementCollection = entity.getAttributes().getElementCollectionAttributes().get( 0 );
+			assertThat( elementCollection.getName() ).isEqualTo( "values" );
+			assertThat( elementCollection.getCollectionType() )
+					.as( "collection-type referencing a typedef should be resolved" )
+					.isNotNull();
+			assertThat( elementCollection.getCollectionType().getType() )
+					.as( "collection-type should use the typedef class, not the typedef name" )
+					.isEqualTo( "org.hibernate.orm.test.mapping.collections.custom.parameterized.DefaultableListType" );
+			assertThat( elementCollection.getCollectionType().getParameters() )
+					.as( "collection-type should include typedef parameters" )
+					.hasSize( 1 );
 		} );
 	}
 }

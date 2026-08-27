@@ -813,6 +813,16 @@ public class PostgreSQLDialect extends Dialect {
 	}
 
 	@Override
+	public boolean supportsSchemaIfNotExists() {
+		return true;
+	}
+
+	@Override
+	public boolean supportsSchemaIfExists() {
+		return true;
+	}
+
+	@Override
 	public boolean supportsDistinctFromPredicate() {
 		return true;
 	}

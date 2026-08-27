@@ -1271,4 +1271,14 @@ public class CockroachDialect extends Dialect {
 	public boolean causesRollback(SQLException sqlException) {
 		return true;
 	}
+
+	@Override
+	public boolean supportsSchemaIfNotExists() {
+		return true;
+	}
+
+	@Override
+	public boolean supportsSchemaIfExists() {
+		return true;
+	}
 }

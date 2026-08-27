@@ -4,6 +4,7 @@
  */
 package org.hibernate.collection.spi;
 
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -38,6 +39,8 @@ import org.hibernate.type.Type;
 public class PersistentMap<K,E> extends AbstractPersistentCollection<E> implements Map<K,E> {
 
 	protected Map<K,E> map;
+	@Serial
+	private static final long serialVersionUID = 1L;
 
 	/**
 	 * Empty constructor.
@@ -596,6 +599,17 @@ public class PersistentMap<K,E> extends AbstractPersistentCollection<E> implemen
 
 	final class Clear implements DelayedOperation<E> {
 		@Override
+		public QueuedCollectionOperation toQueuedOperation(int order) {
+			return new QueuedCollectionOperation(
+					QueuedCollectionOperation.Kind.CLEAR,
+					null,
+					null,
+					null,
+					order
+			);
+		}
+
+		@Override
 		public void operate() {
 			map.clear();
 		}
@@ -636,6 +650,17 @@ public class PersistentMap<K,E> extends AbstractPersistentCollection<E> implemen
 		}
 
 		@Override
+		public QueuedCollectionOperation toQueuedOperation(int order) {
+			return new QueuedCollectionOperation(
+					QueuedCollectionOperation.Kind.PUT,
+					getAddedInstance(),
+					getOrphan(),
+					getIndex(),
+					order
+			);
+		}
+
+		@Override
 		public void operate() {
 			map.put( getIndex(), getAddedInstance() );
 		}
@@ -645,6 +670,17 @@ public class PersistentMap<K,E> extends AbstractPersistentCollection<E> implemen
 
 		public Remove(K index, E orphan) {
 			super( index, null, orphan );
+		}
+
+		@Override
+		public QueuedCollectionOperation toQueuedOperation(int order) {
+			return new QueuedCollectionOperation(
+					QueuedCollectionOperation.Kind.REMOVE,
+					null,
+					getOrphan(),
+					getIndex(),
+					order
+			);
 		}
 
 		@Override

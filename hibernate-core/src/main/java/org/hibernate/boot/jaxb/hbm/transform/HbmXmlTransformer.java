@@ -8,15 +8,18 @@ import java.io.Serializable;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 
 import org.hibernate.AssertionFailure;
 import org.hibernate.annotations.NotFoundAction;
+import org.hibernate.annotations.OnDeleteAction;
 import org.hibernate.boot.MappingException;
 import org.hibernate.boot.internal.LimitedCollectionClassification;
 import org.hibernate.boot.jaxb.Origin;
@@ -38,7 +41,6 @@ import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmConfigParameterContainer;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmCustomSqlDmlType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmDiscriminatorSubclassEntityType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmDynamicComponentType;
-import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmDiscriminatorSubclassEntityType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmEntityBaseDefinition;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmFetchProfileType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmFetchStyleEnum;
@@ -46,6 +48,7 @@ import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmFetchStyleWithSubselectEnum;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmFilterAliasMappingType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmFilterParameterType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmFilterType;
+import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmGeneratorSpecificationType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmHibernateMapping;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmIdBagCollectionType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmIndexType;
@@ -58,6 +61,7 @@ import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmListType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmManyToAnyCollectionElementType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmManyToManyCollectionElementType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmManyToOneType;
+import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmOnDeleteEnum;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmMapKeyBasicType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmMapType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmNamedNativeQueryType;
@@ -74,6 +78,7 @@ import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmPrimitiveArrayType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmPropertiesType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmQueryParamType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmResultSetMappingType;
+import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmPolymorphismEnum;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmRootEntityType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmSecondaryTableType;
 import org.hibernate.boot.jaxb.hbm.spi.JaxbHbmSetType;
@@ -99,6 +104,8 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbCascadeTypeImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbCheckConstraintImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbCollectionTableImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbCollectionUserTypeImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbCollectionIdImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbAttributeOverrideImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbColumnImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbColumnResultImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbConfigurationParameterImpl;
@@ -126,6 +133,7 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbGeneratedValueImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbGenericIdGeneratorImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbHqlImportImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbIdImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbIdClassImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbIndexImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbInheritanceImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbJoinTableImpl;
@@ -133,6 +141,8 @@ import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToManyImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbManyToOneImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbMapKeyColumnImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbMapKeyJoinColumnImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbMappedSuperclassImpl;
+import org.hibernate.boot.jaxb.mapping.spi.JaxbPersistentAttribute;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbNamedNativeQueryImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbNamedHqlQueryImpl;
 import org.hibernate.boot.jaxb.mapping.spi.JaxbNaturalIdImpl;
@@ -366,8 +376,637 @@ public class HbmXmlTransformer {
 			defineInheritance( rootMappingEntity, InheritanceType.TABLE_PER_CLASS );
 		} );
 
+		generateMappedSuperclassesForUnmappedSuperclasses( mappingXmlRoot );
+
 		if ( TRANSFORMATION_LOGGER.isDebugEnabled() ) {
 			dumpTransformed( origin(), mappingXmlRoot );
+		}
+	}
+
+	/**
+	 * Bridges the gap between hbm.xml and orm.xml attribute-member resolution.
+	 * <p>
+	 * In hbm.xml, an entity can map properties whose Java member is declared on a plain
+	 * (unmapped) superclass — the hbm processor walks the class hierarchy via reflection.
+	 * In orm.xml, the XML processor requires each attribute's member to be declared on
+	 * the entity class itself or on an explicitly declared {@code <mapped-superclass>}.
+	 * <p>
+	 * This method detects inherited attributes, generates {@code <mapped-superclass>}
+	 * elements for unmapped Java superclasses, moves the inherited attributes there,
+	 * and marks remaining unmapped properties as {@code <transient/>}.
+	 */
+	private void generateMappedSuperclassesForUnmappedSuperclasses(JaxbEntityMappingsImpl mappingXmlRoot) {
+		final Set<String> mappedEntityClassNames = collectMappedEntityClassNames();
+		final boolean fieldAccess = isFieldAccessDefault();
+
+		final Map<String, JaxbMappedSuperclassImpl> generatedSuperclasses = new HashMap<>();
+		final Map<String, Class<?>> superclassJavaTypes = new HashMap<>();
+
+		for ( var entry : transformationState.getEntityInfoByName().entrySet() ) {
+			final var entityMappingRoot = transformationState.getEntityToMappingXmlMap().get( entry.getKey() );
+			if ( entityMappingRoot != mappingXmlRoot ) {
+				continue;
+			}
+			final Class<?> javaClass = resolveMappedClass( entry.getValue().getPersistentClass() );
+			final var entity = transformationState.getMappingEntityByName().get( entry.getKey() );
+			final var attrs = entity != null ? entity.getAttributes() : null;
+
+			if ( javaClass != null && attrs != null ) {
+				Class<?> currentSuperclass = javaClass.getSuperclass();
+				while ( currentSuperclass != null
+						&& currentSuperclass != Object.class
+						&& !mappedEntityClassNames.contains( currentSuperclass.getName() ) ) {
+					final var mappedSuperclass = getOrCreateMappedSuperclass(
+							currentSuperclass, fieldAccess,
+							generatedSuperclasses, superclassJavaTypes, mappingXmlRoot );
+					moveInheritedAttributesToSuperclass(
+							entity, attrs, mappedSuperclass, currentSuperclass, javaClass, fieldAccess );
+					currentSuperclass = currentSuperclass.getSuperclass();
+				}
+			}
+		}
+
+		resolveOrReportAttributeConflicts( mappingXmlRoot, generatedSuperclasses, mappedEntityClassNames );
+
+		addTransientsForUnmappedProperties( generatedSuperclasses, superclassJavaTypes, fieldAccess );
+	}
+
+	/**
+	 * Resolves or reports attribute overlaps between entities and their generated
+	 * mapped-superclasses, produced by {@link #moveInheritedAttributesToSuperclass}.
+	 * <p>
+	 * In hbm.xml each {@code <class>} is self-contained, so sibling entities sharing
+	 * an unmapped Java superclass can freely diverge.  In orm.xml the generated
+	 * {@code <mapped-superclass>} is shared: one sibling's attribute is moved there,
+	 * and the other sibling keeps its own version because it redeclares the field.
+	 * <p>
+	 * This method handles five cases for such overlaps:
+	 * <ol>
+	 *   <li><b>Id — same generator:</b> the entity's id is removed (inherited from
+	 *       superclass).  If the column differs, an {@code <attribute-override>} is
+	 *       generated so the entity keeps its own column mapping.</li>
+	 *   <li><b>Basic attribute:</b> always resolvable — the entity's basic is removed
+	 *       (inherited from superclass).  If the column differs, an
+	 *       {@code <attribute-override>} is generated.</li>
+	 *   <li><b>Association — same type and target entity:</b> the entity's association
+	 *       is removed (inherited from superclass).</li>
+	 *   <li><b>Id — different generators:</b> unsupported — reported via
+	 *       {@link #handleUnsupported} because the generation strategy cannot be
+	 *       overridden with {@code <attribute-override>}.</li>
+	 *   <li><b>Association — different type or target:</b> unsupported — reported via
+	 *       {@link #handleUnsupported} because association type and target cannot be
+	 *       overridden.</li>
+	 * </ol>
+	 */
+	private void resolveOrReportAttributeConflicts(
+			JaxbEntityMappingsImpl mappingXmlRoot,
+			Map<String, JaxbMappedSuperclassImpl> generatedSuperclasses,
+			Set<String> mappedEntityClassNames) {
+		for ( var entry : transformationState.getEntityInfoByName().entrySet() ) {
+			final var entityMappingRoot = transformationState.getEntityToMappingXmlMap().get( entry.getKey() );
+			if ( entityMappingRoot != mappingXmlRoot ) {
+				continue;
+			}
+			final var entity = transformationState.getMappingEntityByName().get( entry.getKey() );
+			if ( entity == null || entity.getAttributes() == null ) {
+				continue;
+			}
+			final Class<?> javaClass = resolveMappedClass( entry.getValue().getPersistentClass() );
+			if ( javaClass == null ) {
+				continue;
+			}
+			Class<?> superclass = javaClass.getSuperclass();
+			while ( superclass != null
+					&& superclass != Object.class
+					&& !mappedEntityClassNames.contains( superclass.getName() ) ) {
+				final var mappedSuperclass = generatedSuperclasses.get( superclass.getName() );
+				if ( mappedSuperclass != null ) {
+					final var superAttrs = mappedSuperclass.getAttributes();
+					final var entityAttrs = entity.getAttributes();
+
+					resolveOrReportIdOverlaps( entity, entityAttrs, superAttrs, javaClass, superclass );
+					resolveBasicOverlaps( entity, entityAttrs, superAttrs );
+					resolveOrReportAssociationOverlaps(
+							entityAttrs.getOneToOneAttributes(), superAttrs.getOneToOneAttributes(),
+							JaxbOneToOneImpl::getTargetEntity, javaClass, superclass );
+					resolveOrReportAssociationOverlaps(
+							entityAttrs.getManyToOneAttributes(), superAttrs.getManyToOneAttributes(),
+							JaxbManyToOneImpl::getTargetEntity, javaClass, superclass );
+					resolveOrReportAssociationOverlaps(
+							entityAttrs.getOneToManyAttributes(), superAttrs.getOneToManyAttributes(),
+							JaxbOneToManyImpl::getTargetEntity, javaClass, superclass );
+					resolveOrReportAssociationOverlaps(
+							entityAttrs.getManyToManyAttributes(), superAttrs.getManyToManyAttributes(),
+							JaxbManyToManyImpl::getTargetEntity, javaClass, superclass );
+				}
+				superclass = superclass.getSuperclass();
+			}
+		}
+	}
+
+	private void resolveOrReportIdOverlaps(
+			JaxbEntityImpl entity,
+			JaxbAttributesContainerImpl entityAttrs,
+			JaxbAttributesContainerImpl superAttrs,
+			Class<?> entityClass,
+			Class<?> superclass) {
+		final var superIds = superAttrs.getIdAttributes();
+		if ( superIds.isEmpty() ) {
+			return;
+		}
+		final Map<String, JaxbIdImpl> superIdByName = new HashMap<>();
+		for ( var superId : superIds ) {
+			superIdByName.put( superId.getName(), superId );
+		}
+		final var entityIds = new ArrayList<>( entityAttrs.getIdAttributes() );
+		for ( var entityId : entityIds ) {
+			final var superId = superIdByName.get( entityId.getName() );
+			if ( superId == null ) {
+				continue;
+			}
+			if ( sameIdGenerationStrategy( entityId, superId ) ) {
+				entityAttrs.getIdAttributes().remove( entityId );
+				addColumnOverrideIfNeeded( entity, entityId.getName(),
+						entityId.getColumn(), superId.getColumn() );
+			}
+			else {
+				handleUnsupported(
+						"Entity '%s' and its mapped-superclass '%s' use different id generation "
+								+ "strategies for attribute '%s' — this cannot be resolved with "
+								+ "<attribute-override>. Declare the id field on each entity subclass "
+								+ "so each can define its own strategy",
+						entityClass.getName(), superclass.getName(), entityId.getName()
+				);
+			}
+		}
+	}
+
+	private static boolean sameIdGenerationStrategy(JaxbIdImpl a, JaxbIdImpl b) {
+		if ( !sameGeneratedValue( a.getGeneratedValue(), b.getGeneratedValue() ) ) {
+			return false;
+		}
+		return sameGenericGenerator( a.getGenericGenerator(), b.getGenericGenerator() );
+	}
+
+	private static boolean sameGeneratedValue(JaxbGeneratedValueImpl a, JaxbGeneratedValueImpl b) {
+		if ( a == b ) {
+			return true;
+		}
+		if ( a == null || b == null ) {
+			return false;
+		}
+		return Objects.equals( a.getStrategy(), b.getStrategy() )
+				&& Objects.equals( a.getGenerator(), b.getGenerator() );
+	}
+
+	private static boolean sameGenericGenerator(JaxbGenericIdGeneratorImpl a, JaxbGenericIdGeneratorImpl b) {
+		if ( a == b ) {
+			return true;
+		}
+		if ( a == null || b == null ) {
+			return false;
+		}
+		if ( !Objects.equals( a.getClazz(), b.getClazz() ) ) {
+			return false;
+		}
+		return generatorParameters( a )
+				.equals( generatorParameters( b ) );
+	}
+
+	/**
+	 * Builds a {@link JaxbGenericIdGeneratorImpl} from an hbm {@code <generator>}, copying its
+	 * class and configuration parameters. A {@code null} name leaves the generator anonymous
+	 * (inline usage); a non-null name allows it to be referenced from a {@code <generated-value>}.
+	 */
+	private static JaxbGenericIdGeneratorImpl toGenericIdGenerator(
+			String name,
+			JaxbHbmGeneratorSpecificationType hbmGenerator) {
+		final var generator = new JaxbGenericIdGeneratorImpl();
+		generator.setName( name );
+		generator.setClazz( hbmGenerator.getClazz() );
+		for ( var hbmConfigParameter : hbmGenerator.getConfigParameters() ) {
+			final var jaxbParam = new JaxbConfigurationParameterImpl();
+			jaxbParam.setName( hbmConfigParameter.getName() );
+			jaxbParam.setValue( hbmConfigParameter.getValue() );
+			generator.getParameters().add( jaxbParam );
+		}
+		return generator;
+	}
+
+	private static List<String> generatorParameters(JaxbGenericIdGeneratorImpl generator) {
+		final List<String> normalized = new ArrayList<>();
+		for ( var parameter : generator.getParameters() ) {
+			normalized.add( parameter.getName() + "=" + parameter.getValue() );
+		}
+		Collections.sort( normalized );
+		return normalized;
+	}
+
+	private static void resolveBasicOverlaps(
+			JaxbEntityImpl entity,
+			JaxbAttributesContainerImpl entityAttrs,
+			JaxbAttributesContainerImpl superAttrs) {
+		final Map<String, JaxbBasicImpl> superBasicByName = new HashMap<>();
+		for ( var superBasic : superAttrs.getBasicAttributes() ) {
+			superBasicByName.put( superBasic.getName(), superBasic );
+		}
+		final var entityBasics = new ArrayList<>( entityAttrs.getBasicAttributes() );
+		for ( var entityBasic : entityBasics ) {
+			final var superBasic = superBasicByName.get( entityBasic.getName() );
+			if ( superBasic != null ) {
+				entityAttrs.getBasicAttributes().remove( entityBasic );
+				addColumnOverrideIfNeeded( entity, entityBasic.getName(),
+						entityBasic.getColumn(), superBasic.getColumn() );
+			}
+		}
+	}
+
+	private <T extends JaxbPersistentAttribute> void resolveOrReportAssociationOverlaps(
+			List<T> entityAssocs,
+			List<T> superAssocs,
+			java.util.function.Function<T, String> targetEntityExtractor,
+			Class<?> entityClass,
+			Class<?> superclass) {
+		if ( superAssocs.isEmpty() || entityAssocs.isEmpty() ) {
+			return;
+		}
+		final Map<String, T> superByName = new HashMap<>();
+		for ( var superAssoc : superAssocs ) {
+			superByName.put( superAssoc.getName(), superAssoc );
+		}
+		final var snapshot = new ArrayList<>( entityAssocs );
+		for ( var entityAssoc : snapshot ) {
+			final var superAssoc = superByName.get( entityAssoc.getName() );
+			if ( superAssoc == null ) {
+				continue;
+			}
+			if ( Objects.equals(
+					targetEntityExtractor.apply( entityAssoc ),
+					targetEntityExtractor.apply( superAssoc ) ) ) {
+				entityAssocs.remove( entityAssoc );
+			}
+			else {
+				handleUnsupported(
+						"Entity '%s' and its mapped-superclass '%s' map association '%s' to "
+								+ "different target entities — this cannot be resolved with "
+								+ "<attribute-override>. Declare the '%s' field on each entity "
+								+ "subclass so each can define its own mapping",
+						entityClass.getName(), superclass.getName(),
+						entityAssoc.getName(), entityAssoc.getName()
+				);
+			}
+		}
+	}
+
+	private static void addColumnOverrideIfNeeded(
+			JaxbEntityImpl entity,
+			String attrName,
+			JaxbColumnImpl entityColumn,
+			JaxbColumnImpl superColumn) {
+		// Nothing to preserve when the entity relies on the default column
+		if ( entityColumn == null ) {
+			return;
+		}
+		// if superclass has no explicit column, compare against defaults as needed;
+		// otherwise compare full explicit definitions
+		if ( sameEffectiveColumn( entityColumn, superColumn ) ) {
+			return;
+		}
+
+		final var override = new JaxbAttributeOverrideImpl();
+		override.setName( attrName );
+		override.setColumn( copyColumn( entityColumn ) );
+		entity.getAttributeOverrides().add( override );
+	}
+
+	private static boolean sameEffectiveColumn(JaxbColumnImpl a, JaxbColumnImpl b) {
+		if ( a == b ) {
+			return true;
+		}
+		if ( a == null || b == null ) {
+			return false;
+		}
+		return Objects.equals( a.getName(), b.getName() )
+				&& Objects.equals( a.getTable(), b.getTable() )
+				&& Objects.equals( a.isNullable(), b.isNullable() )
+				&& Objects.equals( a.isUnique(), b.isUnique() )
+				&& Objects.equals( a.isInsertable(), b.isInsertable() )
+				&& Objects.equals( a.isUpdatable(), b.isUpdatable() )
+				&& Objects.equals( a.getColumnDefinition(), b.getColumnDefinition() )
+				&& Objects.equals( a.getOptions(), b.getOptions() )
+				&& Objects.equals( a.getLength(), b.getLength() )
+				&& Objects.equals( a.getPrecision(), b.getPrecision() )
+				&& Objects.equals( a.getScale(), b.getScale() )
+				&& Objects.equals( a.getSecondPrecision(), b.getSecondPrecision() )
+				&& Objects.equals( a.getDefault(), b.getDefault() )
+				&& Objects.equals( a.getComment(), b.getComment() )
+				&& Objects.equals( a.getRead(), b.getRead() )
+				&& Objects.equals( a.getWrite(), b.getWrite() )
+				&& columnCheckConstraints( a ).equals( columnCheckConstraints( b ) );
+	}
+
+	private static List<String> columnCheckConstraints(JaxbColumnImpl column) {
+		final List<String> normalized = new ArrayList<>();
+		for ( var checkConstraint : column.getCheckConstraints() ) {
+			normalized.add(
+					checkConstraint.getName() + "="
+							+ checkConstraint.getConstraint() + "="
+							+ checkConstraint.getOptions()
+			);
+		}
+		Collections.sort( normalized );
+		return normalized;
+	}
+
+	private static JaxbColumnImpl copyColumn(JaxbColumnImpl source) {
+		final var copy = new JaxbColumnImpl();
+		copy.setName( source.getName() );
+		copy.setTable( source.getTable() );
+		copy.setNullable( source.isNullable() );
+		copy.setUnique( source.isUnique() );
+		copy.setInsertable( source.isInsertable() );
+		copy.setUpdatable( source.isUpdatable() );
+		copy.setColumnDefinition( source.getColumnDefinition() );
+		copy.setOptions( source.getOptions() );
+		copy.setLength( source.getLength() );
+		copy.setPrecision( source.getPrecision() );
+		copy.setScale( source.getScale() );
+		copy.setSecondPrecision( source.getSecondPrecision() );
+		copy.setDefault( source.getDefault() );
+		copy.setComment( source.getComment() );
+		copy.setRead( source.getRead() );
+		copy.setWrite( source.getWrite() );
+		for ( var sourceCheck : source.getCheckConstraints() ) {
+			final var copiedCheck = new JaxbCheckConstraintImpl();
+			copiedCheck.setName( sourceCheck.getName() );
+			copiedCheck.setConstraint( sourceCheck.getConstraint() );
+			copiedCheck.setOptions( sourceCheck.getOptions() );
+			copy.getCheckConstraints().add( copiedCheck );
+		}
+		return copy;
+	}
+
+	/**
+	 * Collects the class names of all already-mapped entities so that we never
+	 * generate a {@code <mapped-superclass>} for a class that is itself an entity.
+	 */
+	private Set<String> collectMappedEntityClassNames() {
+		final Set<String> classNames = new HashSet<>();
+		for ( var entityInfo : transformationState.getEntityInfoByName().values() ) {
+			final String className = entityInfo.getPersistentClass().getClassName();
+			if ( className != null ) {
+				classNames.add( className );
+			}
+		}
+		return classNames;
+	}
+
+	/**
+	 * Returns {@code true} when the hbm.xml mapping's default access type is {@code "field"}.
+	 */
+	private boolean isFieldAccessDefault() {
+		final String access = hbmXmlBinding.getRoot().getDefaultAccess();
+		return "field".equals( access != null ? access.toLowerCase( Locale.ROOT ) : "property" );
+	}
+
+	/**
+	 * Resolves the Java class mapped by the given {@link PersistentClass},
+	 * returning {@code null} when the class is not on the classpath
+	 * (e.g. in the reverse-engineering tooling scenario).
+	 */
+	private static Class<?> resolveMappedClass(PersistentClass persistentClass) {
+		try {
+			return persistentClass.getMappedClass();
+		}
+		catch (org.hibernate.MappingException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Looks up or creates a {@link JaxbMappedSuperclassImpl} for the given unmapped
+	 * superclass, registering it in the tracking maps and adding it to the mapping root.
+	 * When multiple entities share the same superclass, the existing instance is returned.
+	 */
+	private static JaxbMappedSuperclassImpl getOrCreateMappedSuperclass(
+			Class<?> superclass,
+			boolean fieldAccess,
+			Map<String, JaxbMappedSuperclassImpl> generatedSuperclasses,
+			Map<String, Class<?>> superclassJavaTypes,
+			JaxbEntityMappingsImpl mappingXmlRoot) {
+		final String superclassName = superclass.getName();
+		var mappedSuperclass = generatedSuperclasses.get( superclassName );
+		if ( mappedSuperclass == null ) {
+			mappedSuperclass = new JaxbMappedSuperclassImpl();
+			mappedSuperclass.setClazz( superclassName );
+			mappedSuperclass.setMetadataComplete( true );
+			mappedSuperclass.setAccess( fieldAccess
+					? jakarta.persistence.AccessType.FIELD
+					: jakarta.persistence.AccessType.PROPERTY );
+			mappedSuperclass.setAttributes( new JaxbAttributesContainerImpl() );
+			generatedSuperclasses.put( superclassName, mappedSuperclass );
+			superclassJavaTypes.put( superclassName, superclass );
+			mappingXmlRoot.getMappedSuperclasses().add( mappedSuperclass );
+		}
+		return mappedSuperclass;
+	}
+
+	/**
+	 * Moves attributes (id, basic, associations, embedded, version, embedded-id)
+	 * from the entity to the mapped-superclass when the member is declared on the
+	 * given Java superclass. Also relocates the id-class when all id attributes
+	 * have been moved, and removes entity-level transients for members that now
+	 * belong to the superclass.
+	 */
+	private static void moveInheritedAttributesToSuperclass(
+			JaxbEntityImpl entity,
+			JaxbAttributesContainerImpl attrs,
+			JaxbMappedSuperclassImpl mappedSuperclass,
+			Class<?> superclass,
+			Class<?> entityClass,
+			boolean fieldAccess) {
+		final var superAttrs = mappedSuperclass.getAttributes();
+
+		moveInheritedAttributes( attrs.getIdAttributes(), superAttrs.getIdAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getBasicAttributes(), superAttrs.getBasicAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getManyToOneAttributes(), superAttrs.getManyToOneAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getOneToManyAttributes(), superAttrs.getOneToManyAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getOneToOneAttributes(), superAttrs.getOneToOneAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getManyToManyAttributes(), superAttrs.getManyToManyAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getEmbeddedAttributes(), superAttrs.getEmbeddedAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getElementCollectionAttributes(), superAttrs.getElementCollectionAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getAnyMappingAttributes(), superAttrs.getAnyMappingAttributes(), superclass, entityClass, fieldAccess );
+		moveInheritedAttributes( attrs.getPluralAnyMappingAttributes(), superAttrs.getPluralAnyMappingAttributes(), superclass, entityClass, fieldAccess );
+
+		moveVersionIfInherited( attrs, superAttrs, superclass, entityClass, fieldAccess );
+		moveEmbeddedIdIfInherited( attrs, superAttrs, superclass, entityClass, fieldAccess );
+		moveIdClassIfAllIdsMoved( entity, attrs, mappedSuperclass, superAttrs );
+
+		attrs.getTransients().removeIf( t -> isMemberDeclaredOnClass( t.getName(), superclass, fieldAccess ) );
+	}
+
+	/**
+	 * Moves the version attribute from the entity to the mapped-superclass
+	 * when the version member is declared on the given superclass.
+	 */
+	private static void moveVersionIfInherited(
+			JaxbAttributesContainerImpl attrs,
+			JaxbAttributesContainerImpl superAttrs,
+			Class<?> superclass,
+			Class<?> entityClass,
+			boolean fieldAccess) {
+		final var version = attrs.getVersion();
+		if ( version != null
+				&& isMemberDeclaredOnClass( version.getName(), superclass, fieldAccess )
+				&& !isMemberDeclaredOnClass( version.getName(), entityClass, fieldAccess ) ) {
+			if ( superAttrs.getVersion() == null ) {
+				superAttrs.setVersion( version );
+			}
+			attrs.setVersion( null );
+		}
+	}
+
+	/**
+	 * Moves the embedded-id attribute from the entity to the mapped-superclass
+	 * when the embedded-id member is declared on the given superclass.
+	 */
+	private static void moveEmbeddedIdIfInherited(
+			JaxbAttributesContainerImpl attrs,
+			JaxbAttributesContainerImpl superAttrs,
+			Class<?> superclass,
+			Class<?> entityClass,
+			boolean fieldAccess) {
+		final var embeddedId = attrs.getEmbeddedIdAttribute();
+		if ( embeddedId != null
+				&& isMemberDeclaredOnClass( embeddedId.getName(), superclass, fieldAccess )
+				&& !isMemberDeclaredOnClass( embeddedId.getName(), entityClass, fieldAccess ) ) {
+			if ( superAttrs.getEmbeddedIdAttribute() == null ) {
+				superAttrs.setEmbeddedIdAttribute( embeddedId );
+			}
+			attrs.setEmbeddedIdAttribute( null );
+		}
+	}
+
+	/**
+	 * Relocates the id-class declaration from the entity to the mapped-superclass
+	 * when all id attributes have already been moved there.
+	 */
+	private static void moveIdClassIfAllIdsMoved(
+			JaxbEntityImpl entity,
+			JaxbAttributesContainerImpl attrs,
+			JaxbMappedSuperclassImpl mappedSuperclass,
+			JaxbAttributesContainerImpl superAttrs) {
+		if ( entity.getIdClass() != null
+				&& mappedSuperclass.getIdClass() == null
+				&& attrs.getIdAttributes().isEmpty()
+				&& attrs.getEmbeddedIdAttribute() == null
+				&& !superAttrs.getIdAttributes().isEmpty() ) {
+			mappedSuperclass.setIdClass( entity.getIdClass() );
+			entity.setIdClass( null );
+		}
+	}
+
+	/**
+	 * Adds {@code <transient/>} declarations for properties on each generated
+	 * mapped-superclass that are not mapped by any entity.
+	 */
+	private static void addTransientsForUnmappedProperties(
+			Map<String, JaxbMappedSuperclassImpl> generatedSuperclasses,
+			Map<String, Class<?>> superclassJavaTypes,
+			boolean fieldAccess) {
+		for ( var entry : generatedSuperclasses.entrySet() ) {
+			final var mappedSuperclass = entry.getValue();
+			final var superAttrs = mappedSuperclass.getAttributes();
+			final Set<String> mappedNames = collectMappedAttributeNames( superAttrs );
+			final Class<?> superclass = superclassJavaTypes.get( entry.getKey() );
+			if ( superclass != null ) {
+				final Set<String> transientNames = TransformationHelper.discoverUnmappedPropertyNames(
+						superclass, mappedNames, fieldAccess
+				);
+				TransformationHelper.addTransients( transientNames, superAttrs.getTransients() );
+			}
+		}
+	}
+
+	/**
+	 * Moves attributes whose member is declared on the given Java superclass
+	 * from the entity's attribute list to the mapped-superclass attribute list.
+	 * Duplicates (already present in the superclass) are skipped.
+	 */
+	private static <T extends JaxbPersistentAttribute> void moveInheritedAttributes(
+			List<T> entityAttrs,
+			List<T> superAttrs,
+			Class<?> javaSuperclass,
+			Class<?> entityClass,
+			boolean fieldAccess) {
+		final var toMove = new ArrayList<T>();
+		for ( var attr : entityAttrs ) {
+			if ( isMemberDeclaredOnClass( attr.getName(), javaSuperclass, fieldAccess )
+					&& !isMemberDeclaredOnClass( attr.getName(), entityClass, fieldAccess ) ) {
+				toMove.add( attr );
+			}
+		}
+		final Set<String> existingNames = new HashSet<>();
+		for ( var attr : superAttrs ) {
+			existingNames.add( attr.getName() );
+		}
+		for ( var attr : toMove ) {
+			entityAttrs.remove( attr );
+			if ( existingNames.add( attr.getName() ) ) {
+				superAttrs.add( attr );
+			}
+		}
+	}
+
+	private static Set<String> collectMappedAttributeNames(JaxbAttributesContainerImpl attrs) {
+		final Set<String> names = new HashSet<>();
+		addAttributeNames( names,
+				attrs.getIdAttributes(),
+				attrs.getBasicAttributes(),
+				attrs.getManyToOneAttributes(),
+				attrs.getOneToManyAttributes(),
+				attrs.getOneToOneAttributes(),
+				attrs.getManyToManyAttributes(),
+				attrs.getEmbeddedAttributes(),
+				attrs.getElementCollectionAttributes(),
+				attrs.getAnyMappingAttributes(),
+				attrs.getPluralAnyMappingAttributes()
+		);
+		if ( attrs.getVersion() != null ) {
+			names.add( attrs.getVersion().getName() );
+		}
+		if ( attrs.getEmbeddedIdAttribute() != null ) {
+			names.add( attrs.getEmbeddedIdAttribute().getName() );
+		}
+		return names;
+	}
+
+	@SafeVarargs
+	private static void addAttributeNames(Set<String> names, List<? extends JaxbPersistentAttribute>... attrLists) {
+		for ( var attrList : attrLists ) {
+			for ( var attr : attrList ) {
+				names.add( attr.getName() );
+			}
+		}
+	}
+
+	private static boolean isMemberDeclaredOnClass(String propertyName, Class<?> clazz, boolean fieldAccess) {
+		if ( fieldAccess ) {
+			try {
+				clazz.getDeclaredField( propertyName );
+				return true;
+			}
+			catch (NoSuchFieldException ignored) {
+				return false;
+			}
+		}
+		else {
+			for ( var method : clazz.getDeclaredMethods() ) {
+				if ( propertyName.equals( TransformationHelper.extractPropertyName( method ) ) ) {
+					return true;
+				}
+			}
+			return false;
 		}
 	}
 
@@ -409,6 +1048,10 @@ public class HbmXmlTransformer {
 
 		if ( !hbmClass.getTuplizer().isEmpty() ) {
 			handleUnsupported( "<tuplizer/> is not supported" );
+		}
+
+		if ( hbmClass.getPolymorphism() == JaxbHbmPolymorphismEnum.EXPLICIT ) {
+			handleUnsupported( "explicit polymorphism no longer supported" );
 		}
 
 		if ( hbmClass.getSqlInsert() != null ) {
@@ -551,11 +1194,7 @@ public class HbmXmlTransformer {
 
 		final var key = hbmSubclass.getKey();
 		if ( key != null ) {
-			final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
-			// todo (7.0) : formula and multiple columns
-			joinColumn.setName( key.getColumnAttribute() );
-			subclassEntity.getPrimaryKeyJoinColumns().add( joinColumn );
-			joinColumn.setForeignKey( transformForeignKey( key.getForeignKey() ) );
+			transferKeyColumns( key, subclassEntity.getPrimaryKeyJoinColumns() );
 		}
 
 		if ( !hbmSubclass.getJoinedSubclass().isEmpty() ) {
@@ -776,7 +1415,9 @@ public class HbmXmlTransformer {
 				final var ormImport = new JaxbHqlImportImpl();
 				ormRoot.getHqlImports().add( ormImport );
 				ormImport.setClazz( hbmImport.getClazz() );
-				ormImport.setRename( hbmImport.getRename() );
+				final String rename = hbmImport.getRename();
+				// In hbm.xml rename is optional and defaults to the unqualified class name
+				ormImport.setRename( rename != null ? rename : StringHelper.unqualify( hbmImport.getClazz() ) );
 			}
 		}
 	}
@@ -847,7 +1488,10 @@ public class HbmXmlTransformer {
 			String resultMappingName,
 			JaxbHbmNativeQueryReturnType hbmReturn) {
 		final var entityResult = new JaxbEntityResultImpl();
-		entityResult.setEntityClass( getFullyQualifiedClassName( hbmReturn.getClazz() ) );
+		final String entityName = hbmReturn.getClazz() != null
+				? hbmReturn.getClazz()
+				: hbmReturn.getEntityName();
+		entityResult.setEntityClass( getFullyQualifiedClassName( entityName ) );
 
 		for ( var propertyReturn : hbmReturn.getReturnProperty() ) {
 			final var field = new JaxbFieldResultImpl();
@@ -885,15 +1529,9 @@ public class HbmXmlTransformer {
 			JaxbHbmNativeQueryScalarReturnType hbmReturn) {
 		final var columnResult = new JaxbColumnResultImpl();
 		columnResult.setName( hbmReturn.getColumn() );
-		columnResult.setClazz( hbmReturn.getType() );
-		handleUnsupportedContent(
-				String.format(
-						"SQL ResultSet mapping [name=%s] contained a <return-scalar column='%s'/> element; " +
-								"transforming type->class likely requires manual adjustment",
-						resultMappingName,
-						hbmReturn.getColumn()
-				)
-		);
+		if ( hbmReturn.getType() != null ) {
+			columnResult.setClazz( resolveHbmTypeName( hbmReturn.getType() ) );
+		}
 		return columnResult;
 	}
 
@@ -994,7 +1632,9 @@ public class HbmXmlTransformer {
 		for ( Object content : hbmQuery.getContent() ) {
 			if ( content instanceof String qryString ) {
 				qryString = qryString.trim();
-				query.setQuery( qryString );
+				if ( !qryString.isEmpty() ) {
+					query.setQuery( qryString );
+				}
 			}
 			else if ( content instanceof JAXBElement<?> contentElement ) {
 				final Object element = contentElement.getValue();
@@ -1069,6 +1709,10 @@ public class HbmXmlTransformer {
 					);
 				}
 			}
+		}
+
+		if ( implicitResultSetMapping != null ) {
+			query.setResultSetMapping( implicitResultSetMappingName );
 		}
 
 		return query;
@@ -1310,7 +1954,31 @@ public class HbmXmlTransformer {
 			if ( column.getLength() != null ) {
 				jaxbColumn.setLength( column.getLength().intValue() );
 			}
+			else if ( discriminatorType == DiscriminatorType.STRING ) {
+				final Integer length = determineDiscriminatorLength( bootEntityInfo.getPersistentClass() );
+				if ( length != null ) {
+					jaxbColumn.setLength( length );
+				}
+			}
 		}
+	}
+
+	// The JPA default for @DiscriminatorColumn.length is 31. HBM mappings have no such
+	// limit and often use fully-qualified class names as discriminator values. When the
+	// longest value exceeds 31 we must set the length explicitly to avoid truncation.
+	private static Integer determineDiscriminatorLength(PersistentClass rootClass) {
+		int maxLength = 0;
+		final String rootValue = rootClass.getDiscriminatorValue();
+		if ( rootValue != null ) {
+			maxLength = rootValue.length();
+		}
+		for ( var subclass : rootClass.getSubclasses() ) {
+			final String value = subclass.getDiscriminatorValue();
+			if ( value != null && value.length() > maxLength ) {
+				maxLength = value.length();
+			}
+		}
+		return maxLength > 31 ? maxLength : null;
 	}
 
 	private static DiscriminatorType determineDiscriminatorType(Value discriminatorBinding) {
@@ -1903,6 +2571,10 @@ public class HbmXmlTransformer {
 
 		jaxbManyToOne.setForeignKey( transformForeignKey( hbmNode.getForeignKey() ) );
 
+		if ( hbmNode.getOnDelete() == JaxbHbmOnDeleteEnum.CASCADE ) {
+			jaxbManyToOne.setOnDelete( OnDeleteAction.CASCADE );
+		}
+
 		if ( hbmNode.getNotFound() != null ) {
 			jaxbManyToOne.setNotFound( interpretNotFoundAction( hbmNode.getNotFound() ) );
 		}
@@ -2050,15 +2722,37 @@ public class HbmXmlTransformer {
 				target::setAccess,
 				target::setAttributeAccessor
 		);
-		target.setFetchMode( convert( source.getFetch(), source.getOuterJoin() ) );
-		target.setFetch( convert( source.getLazy() ) );
+		final var fetchMode = convert( source.getFetch(), source.getOuterJoin() );
+		final var fetchType = convert( source.getLazy() );
+		// In hbm.xml, fetch="join" and lazy="true" are independent: the collection stays lazy
+		// and uses join fetching only when initialized. In orm.xml, fetch-mode="JOIN" maps to
+		// @Fetch(FetchMode.JOIN) which forces eager loading (CollectionBinder overrides lazy to
+		// false for JOIN). Since a lazy collection uses a separate SELECT regardless of fetch
+		// style, we drop fetch-mode="JOIN" for lazy collections to preserve the lazy semantics.
+		if ( fetchMode != JaxbPluralFetchModeImpl.JOIN || fetchType != FetchType.LAZY ) {
+			target.setFetchMode( fetchMode );
+		}
+		target.setFetch( fetchType );
 		target.setOptimisticLock( source.isOptimisticLock() );
 		target.setMutable( source.isMutable() );
 
 		if ( isNotEmpty( source.getCollectionType() ) ) {
 			final var jaxbCollectionUserType = new JaxbCollectionUserTypeImpl();
 			target.setCollectionType( jaxbCollectionUserType );
-			jaxbCollectionUserType.setType( source.getCollectionType() );
+			// resolve typedef alias to the actual implementation class and transfer parameters
+			final var typeDef = transformationState.getTypeDefMap().get( source.getCollectionType() );
+			if ( typeDef != null ) {
+				jaxbCollectionUserType.setType( typeDef.getClazz() );
+				for ( var param : typeDef.getConfigParameters() ) {
+					final var jaxbParam = new JaxbConfigurationParameterImpl();
+					jaxbParam.setName( param.getName() );
+					jaxbParam.setValue( param.getValue() );
+					jaxbCollectionUserType.getParameters().add( jaxbParam );
+				}
+			}
+			else {
+				jaxbCollectionUserType.setType( source.getCollectionType() );
+			}
 		}
 
 		if ( source instanceof JaxbHbmSetType set ) {
@@ -2073,12 +2767,16 @@ public class HbmXmlTransformer {
 			transferMapKey( map, target, propertyInfo );
 			target.setClassification( LimitedCollectionClassification.MAP );
 		}
-		else if ( source instanceof JaxbHbmIdBagCollectionType ) {
-			handleUnsupported( "collection-id is not supported for transformation" );
-
+		else if ( source instanceof JaxbHbmIdBagCollectionType idBag ) {
+			// Do not set classification to BAG — the presence of <collection-id> on
+			// the target will cause CollectionBinder to classify it as ID_BAG.
+			// Setting BAG explicitly would bypass the CollectionId annotation check.
+			transferCollectionId( idBag, target );
+			target.setOrderBy( idBag.getOrderBy() );
 		}
-		else if ( source instanceof JaxbHbmBagCollectionType ) {
+		else if ( source instanceof JaxbHbmBagCollectionType bag ) {
 			target.setClassification( LimitedCollectionClassification.BAG );
+			target.setOrderBy( bag.getOrderBy() );
 		}
 		else if ( source instanceof JaxbHbmListType listType ) {
 			transferListIndex(
@@ -2104,6 +2802,46 @@ public class HbmXmlTransformer {
 			);
 			target.setClassification( LimitedCollectionClassification.LIST );
 		}
+	}
+
+	private void transferCollectionId(JaxbHbmIdBagCollectionType idBag, JaxbPluralAttribute target) {
+		final var hbmCollectionId = idBag.getCollectionId();
+		if ( hbmCollectionId == null ) {
+			return;
+		}
+
+		final var collectionId = new JaxbCollectionIdImpl();
+
+		final var column = new JaxbColumnImpl();
+		column.setName( hbmCollectionId.getColumnAttribute() );
+		if ( hbmCollectionId.getLength() != null ) {
+			column.setLength( hbmCollectionId.getLength() );
+		}
+		collectionId.setColumn( column );
+
+		final var hbmGenerator = hbmCollectionId.getGenerator();
+		if ( hbmGenerator != null ) {
+			final var generatedValue = new JaxbGeneratedValueImpl();
+
+			if ( !hbmGenerator.getConfigParameters().isEmpty() ) {
+				final var generatorName = target.getName() + "-collection-id-generator";
+				generatedValue.setGenerator( generatorName );
+				mappingXmlBinding.getRoot().getGenericGenerators()
+						.add( toGenericIdGenerator( generatorName, hbmGenerator ) );
+			}
+			else {
+				generatedValue.setGenerator( hbmGenerator.getClazz() );
+			}
+
+			collectionId.setGenerator( generatedValue );
+		}
+
+		final String hbmType = hbmCollectionId.getType();
+		if ( isNotEmpty( hbmType ) ) {
+			collectionId.setTarget( Character.toUpperCase( hbmType.charAt( 0 ) ) + hbmType.substring( 1 ) );
+		}
+
+		target.setCollectionId( collectionId );
 	}
 
 	private void transferSort(String sort, JaxbPluralAttribute target) {
@@ -2980,21 +3718,7 @@ public class HbmXmlTransformer {
 			final var jaxbGeneratedValue = new JaxbGeneratedValueImpl();
 			jaxbGeneratedValue.setGenerator( generatorName );
 			target.setGeneratedValue( jaxbGeneratedValue );
-
-			final var generator = new JaxbGenericIdGeneratorImpl();
-			generator.setName( generatorName );
-
-			target.setGenericGenerator( generator );
-			generator.setClazz( hbmGenerator.getClazz() );
-
-			final var hbmConfigParameters = hbmGenerator.getConfigParameters();
-			for ( int i = 0; i < hbmConfigParameters.size(); i++ ) {
-				final var hbmConfigParameter = hbmConfigParameters.get( i );
-				final var jaxbParam = new JaxbConfigurationParameterImpl();
-				generator.getParameters().add( jaxbParam );
-				jaxbParam.setName( hbmConfigParameter.getName() );
-				jaxbParam.setValue( hbmConfigParameter.getValue() );
-			}
+			target.setGenericGenerator( toGenericIdGenerator( generatorName, hbmGenerator ) );
 		}
 
 		target.setUnsavedValue( source.getUnsavedValue() );
@@ -3024,6 +3748,15 @@ public class HbmXmlTransformer {
 				jaxbEmbeddedId::setAttributeAccessor
 		);
 		jaxbEmbeddedId.setTarget( jaxbEmbeddable.getName() );
+
+		final var hbmGenerator = hbmCompositeId.getGenerator();
+		if ( hbmGenerator != null && !"assigned".equals( hbmGenerator.getClazz() ) ) {
+			final var generatorName = jaxbEmbeddedId.getName() + "-composite-id-generator";
+			final var jaxbGeneratedValue = new JaxbGeneratedValueImpl();
+			jaxbGeneratedValue.setGenerator( generatorName );
+			jaxbEmbeddedId.setGeneratedValue( jaxbGeneratedValue );
+			jaxbEmbeddedId.setGenericGenerator( toGenericIdGenerator( generatorName, hbmGenerator ) );
+		}
 	}
 
 	private void transferAccess(
@@ -3255,7 +3988,7 @@ public class HbmXmlTransformer {
 		}
 
 		jaxbKyManyToOne.setOptional( false );
-		jaxbKyManyToOne.setFetch( FetchType.EAGER );
+		jaxbKyManyToOne.setFetch( FetchType.LAZY );
 		jaxbKyManyToOne.setFetchMode( JaxbSingularFetchModeImpl.SELECT );
 		jaxbKyManyToOne.setNotFound( NotFoundAction.EXCEPTION );
 
@@ -3369,7 +4102,9 @@ public class HbmXmlTransformer {
 			JaxbHbmCompositeIdType hbmCompositeId,
 			Component idClassMapping,
 			JaxbEntityImpl mappingXmlEntity) {
-		throw new UnsupportedOperationException( "Not implemented yet" );
+		final var idClass = new JaxbIdClassImpl();
+		idClass.setClazz( getFullyQualifiedClassName( hbmCompositeId.getClazz() ) );
+		mappingXmlEntity.setIdClass( idClass );
 	}
 
 	private JaxbIdImpl transformNonAggregatedKeyProperty(
@@ -3641,15 +4376,33 @@ public class HbmXmlTransformer {
 		secondaryTable.setOwned( !hbmJoin.isInverse() );
 		final JaxbHbmKeyType key = hbmJoin.getKey();
 		if ( key != null ) {
-			final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
-			joinColumn.setName( key.getColumnAttribute() );
-			secondaryTable.getPrimaryKeyJoinColumn().add( joinColumn );
-
-			joinColumn.setForeignKey( transformForeignKey( key.getForeignKey() ) );
+			transferKeyColumns( key, secondaryTable.getPrimaryKeyJoinColumn() );
 		}
 		mappingEntity.getSecondaryTables().add( secondaryTable );
 	}
 
+
+	private void transferKeyColumns(JaxbHbmKeyType key, List<JaxbPrimaryKeyJoinColumnImpl> targetColumns) {
+		final String columnName = key.getColumnAttribute();
+		if ( columnName != null || key.getColumn().size() <= 1 ) {
+			final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
+			if ( columnName == null && !key.getColumn().isEmpty() ) {
+				joinColumn.setName( key.getColumn().get( 0 ).getName() );
+			}
+			else {
+				joinColumn.setName( columnName );
+			}
+			joinColumn.setForeignKey( transformForeignKey( key.getForeignKey() ) );
+			targetColumns.add( joinColumn );
+		}
+		else {
+			for ( JaxbHbmColumnType column : key.getColumn() ) {
+				final var joinColumn = new JaxbPrimaryKeyJoinColumnImpl();
+				joinColumn.setName( column.getName() );
+				targetColumns.add( joinColumn );
+			}
+		}
+	}
 
 	// ToOne
 	private void transferFetchable(

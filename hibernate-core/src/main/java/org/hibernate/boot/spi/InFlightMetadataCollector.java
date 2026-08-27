@@ -13,6 +13,7 @@ import java.util.function.Function;
 import org.hibernate.DuplicateMappingException;
 import org.hibernate.HibernateException;
 import org.hibernate.MappingException;
+import org.hibernate.Remove;
 import org.hibernate.boot.query.internal.NamedProcedureCallDefinitionImpl;
 import org.hibernate.boot.model.IdentifierGeneratorDefinition;
 import org.hibernate.boot.model.NamedEntityGraphDefinition;
@@ -82,6 +83,7 @@ public interface InFlightMetadataCollector extends MetadataImplementor {
 		return getBootstrapContext().getModelsContext().getAnnotationDescriptorRegistry();
 	}
 
+	@Remove
 	GlobalRegistrations getGlobalRegistrations();
 	PersistenceUnitMetadata getPersistenceUnitMetadata();
 
@@ -254,6 +256,7 @@ public interface InFlightMetadataCollector extends MetadataImplementor {
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// make sure these are account for better in metamodel
 
+	@Remove
 	void addIdentifierGenerator(IdentifierGeneratorDefinition generatorDefinition);
 
 	/**
@@ -294,8 +297,10 @@ public interface InFlightMetadataCollector extends MetadataImplementor {
 	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// second passes
 
+	@Remove
 	void addSecondPass(SecondPass secondPass);
 
+	@Remove
 	void addSecondPass(SecondPass sp, boolean onTopOfTheQueue);
 
 
@@ -320,6 +325,7 @@ public interface InFlightMetadataCollector extends MetadataImplementor {
 	String getLogicalColumnName(Table table, Identifier physicalName);
 	String getLogicalColumnName(Table table, String physicalName);
 
+	@Remove
 	void addDefaultIdentifierGenerator(IdentifierGeneratorDefinition generatorDefinition);
 
 	void addDefaultQuery(NamedHqlQueryDefinition<?> queryDefinition);
@@ -341,11 +347,13 @@ public interface InFlightMetadataCollector extends MetadataImplementor {
 	void addToOneAndIdProperty(ClassDetails entityClassDetails, PropertyData propertyAnnotatedElement);
 	PropertyData getPropertyAnnotatedWithIdAndToOne(ClassDetails persistentClassDetails, String propertyName);
 
+	@Remove
 	boolean isInSecondPass();
 
 	NaturalIdUniqueKeyBinder locateNaturalIdUniqueKeyBinder(String entityName);
 	void registerNaturalIdUniqueKeyBinder(String entityName, NaturalIdUniqueKeyBinder ukBinder);
 
+	@Remove
 	void registerValueMappingResolver(Function<MetadataBuildingContext,Boolean> resolver);
 
 	void addJavaTypeRegistration(Class<?> javaType, JavaType<?> jtd);
@@ -377,6 +385,7 @@ public interface InFlightMetadataCollector extends MetadataImplementor {
 	String getFromMappedBy(String ownerEntityName, String propertyName);
 
 	interface EntityTableXref {
+		@Remove
 		void addSecondaryTable(LocalMetadataBuildingContext buildingContext, Identifier logicalName, Join secondaryTableJoin);
 		void addSecondaryTable(QualifiedTableName logicalName, Join secondaryTableJoin);
 		Table resolveTable(Identifier tableName);

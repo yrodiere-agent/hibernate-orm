@@ -101,7 +101,7 @@ public final class ClassWriter {
 			if ( context.addComponentAnnotation() && entity.isInjectable() ) {
 				pw.println( writeComponentAnnotation( entity ) );
 			}
-			if ( context.addDependentAnnotation() && entity.isInjectable() ) {
+			if ( context.isCdiAvailable() && entity.isInjectable() ) {
 				pw.println( writeScopeAnnotation( entity ) );
 			}
 			if ( isLifecycleEventListener( entity ) ) {
@@ -225,6 +225,11 @@ public final class ClassWriter {
 				printAnnotationValue( entity, pw, (AnnotationValue) listedValue );
 			}
 			pw.print('}');
+		}
+		else if (argument instanceof String string) {
+			pw.print('"');
+			pw.print( string.replace( "\\", "\\\\" ).replace( "\"", "\\\"" ) );
+			pw.print('"');
 		}
 		else {
 			pw.print( argument );

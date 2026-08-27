@@ -8,6 +8,7 @@ import org.hibernate.processor.HibernateProcessor;
 import org.hibernate.processor.test.util.CompilationTest;
 import org.hibernate.processor.test.util.TestUtil;
 import org.hibernate.processor.test.util.WithClasses;
+import org.hibernate.processor.test.util.WithProcessorOption;
 import org.junit.jupiter.api.Test;
 
 import javax.tools.Diagnostic;
@@ -33,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DataTest {
 	@Test
 	@WithClasses({ Author.class, Book.class, BookAuthorRepository.class, IdOperations.class, Concrete.class, Thing.class })
+	@WithProcessorOption(key = HibernateProcessor.DIALECT_OPTION, value = "org.hibernate.dialect.PostgreSQLDialect")
 	void test() {
 		System.out.println( getMetaModelSourceAsString( Author.class ) );
 		System.out.println( getMetaModelSourceAsString( Book.class ) );
@@ -82,6 +84,7 @@ class DataTest {
 		assertTrue( queryMetamodel.contains( "TypedQueryReference<Long> bookCountWithNativeResultMapping(String title)" ) );
 		assertTrue( queryMetamodel.contains( "TypedQueryReference<Long> countBooksWithIsbn()" ) );
 		assertTrue( queryMetamodel.contains( "TypedQueryReference<Boolean> countBooksWithIsbn2()" ) );
+		assertTrue( queryMetamodel.contains( "TypedQueryReference<AuthorBookPagesDto> authorPages()" ) );
 		assertTrue( queryMetamodel.contains( "TypedQueryReference<Author> withNoOrder2()" ) );
 		assertTrue( repository.contains( "SelectionSpecification.create(BookAuthorRepository_.booksWithJakartaQueryOrder(title))" ) );
 		assertTrue( repository.contains(
@@ -113,12 +116,14 @@ class DataTest {
 		assertTrue( repository.contains( "createQuery(BookAuthorRepository_.bookRowsWithNativeResultMapping(title))" ) );
 		assertTrue( repository.contains( "createQuery(BookAuthorRepository_.countBooksWithIsbn())" ) );
 		assertTrue( repository.contains( "createQuery(BookAuthorRepository_.countBooksWithIsbn2())" ) );
+		assertTrue( repository.contains( "createQuery(BookAuthorRepository_.authorPages())" ) );
 		assertTrue( repository.contains( "createQuery(BookAuthorRepository_.withNoOrder2())" ) );
 		assertTrue( repository.contains( "Stream<Author> allAuthors(@Nonnull Order<Author> order)" ) );
 		assertTrue( repository.contains( "applyOrder(order, _query, _entity, _builder);" ) );
 		assertFalse( repository.contains( "order.apply(_query, _entity, _builder);" ) );
 		assertFalse( repository.contains( "createNamedQuery(\"BookAuthorRepository.countBooksWithIsbn\", long.class)" ) );
 		assertFalse( repository.contains( "createNamedQuery(\"BookAuthorRepository.countBooksWithIsbn2\", boolean.class)" ) );
+		assertFalse( repository.contains( "createNamedQuery(\"BookAuthorRepository.authorPages\", AuthorBookPagesDto.class)" ) );
 		assertFalse( repository.contains( "createNamedQuery(\"BookAuthorRepository.withNoOrder2\", Author.class)" ) );
 		assertTrue( repository.contains( "createStatement(BookAuthorRepository_.updateAuthorAddress1(id, name))" ) );
 		assertTrue( repository.contains( "createStatement(BookAuthorRepository_.updateAuthorAddress2(id, name))" ) );

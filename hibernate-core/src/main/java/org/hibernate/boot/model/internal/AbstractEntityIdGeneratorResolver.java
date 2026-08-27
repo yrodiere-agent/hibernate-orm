@@ -155,6 +155,24 @@ public abstract class AbstractEntityIdGeneratorResolver implements IdGeneratorRe
 			}
 		}
 
+		if ( !declaringType.isRealClass() ) {
+			return false;
+		}
+		final var declaringModule = declaringType.toJavaClass().getModule();
+		if ( declaringModule.isNamed() ) {
+			final var moduleDetails =
+					buildingContext.getBootstrapContext().getModelsContext()
+							.getModuleDetailsRegistry()
+							.findModuleDetails( declaringModule.getName() );
+			if ( moduleDetails != null ) {
+				final var fromModule = findGeneratorAnnotation( moduleDetails );
+				if ( fromModule != null ) {
+					handleIdGeneratorType( fromModule, idValue, idMember, buildingContext );
+					return true;
+				}
+			}
+		}
+
 		return false;
 	}
 
