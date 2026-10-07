@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 		FinalFieldTest.EntityWithFinalEmbeddedId.class,
 		FinalFieldTest.EntityWithFinalIdClassReordered.class,
 		FinalFieldTest.EntityWithFinalIdClassMixedTypes.class,
+		FinalFieldTest.EntityWithFinalIdClassNoInstantiator.class,
 		FinalFieldTest.ParentWithFinalOneToMany.class,
 		FinalFieldTest.ChildOfParent.class,
 		FinalFieldTest.AuthorWithFinalManyToMany.class,
@@ -259,6 +260,29 @@ public class FinalFieldTest {
 			assertNotNull( loaded );
 			assertEquals( 1L, loaded.getId1() );
 			assertEquals( "key", loaded.getId2() );
+			assertEquals( "test", loaded.getName() );
+		} );
+	}
+
+	@Test
+	@Jira("https://hibernate.atlassian.net/browse/HHH-20542")
+	public void testFinalIdClassFieldsEnhancedNoInstantiator(SessionFactoryScope scope) {
+		assumeFalse( !Managed.class.isAssignableFrom( EntityWithFinalIdClassNoInstantiator.class ),
+				"Requires bytecode enhancement to remove final modifiers from IdClass fields" );
+
+		scope.inTransaction( s -> {
+			EntityWithFinalIdClassNoInstantiator entity = new EntityWithFinalIdClassNoInstantiator( 1L, 2L, "test" );
+			s.persist( entity );
+		} );
+
+		scope.inTransaction( s -> {
+			EntityWithFinalIdClassNoInstantiator loaded = s.find(
+					EntityWithFinalIdClassNoInstantiator.class,
+					new CompositeIdNoInstantiator( 1L, 2L )
+			);
+			assertNotNull( loaded );
+			assertEquals( 1L, loaded.getId1() );
+			assertEquals( 2L, loaded.getId2() );
 			assertEquals( "test", loaded.getName() );
 		} );
 	}
@@ -857,6 +881,79 @@ public class FinalFieldTest {
 		}
 
 		public String getId2() {
+			return id2;
+		}
+
+		public String getName() {
+			return name;
+		}
+
+		public void setName(String name) {
+			this.name = name;
+		}
+	}
+
+	// IdClass without @Instantiator — relies on bytecode enhancement to remove final
+	public static class CompositeIdNoInstantiator implements Serializable {
+		private final Long id1;
+		private final Long id2;
+
+		protected CompositeIdNoInstantiator() {
+			this.id1 = null;
+			this.id2 = null;
+		}
+
+		public CompositeIdNoInstantiator(Long id1, Long id2) {
+			this.id1 = id1;
+			this.id2 = id2;
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if ( this == o ) {
+				return true;
+			}
+			if ( o == null || getClass() != o.getClass() ) {
+				return false;
+			}
+			CompositeIdNoInstantiator that = (CompositeIdNoInstantiator) o;
+			return Objects.equals( id1, that.id1 ) && Objects.equals( id2, that.id2 );
+		}
+
+		@Override
+		public int hashCode() {
+			return Objects.hash( id1, id2 );
+		}
+	}
+
+	@Entity(name = "EntityWithFinalIdClassNoInstantiator")
+	@IdClass(FinalFieldTest.CompositeIdNoInstantiator.class)
+	public static class EntityWithFinalIdClassNoInstantiator {
+
+		@Id
+		private final Long id1;
+
+		@Id
+		private final Long id2;
+
+		private String name;
+
+		protected EntityWithFinalIdClassNoInstantiator() {
+			this.id1 = null;
+			this.id2 = null;
+		}
+
+		public EntityWithFinalIdClassNoInstantiator(Long id1, Long id2, String name) {
+			this.id1 = id1;
+			this.id2 = id2;
+			this.name = name;
+		}
+
+		public Long getId1() {
+			return id1;
+		}
+
+		public Long getId2() {
 			return id2;
 		}
 
