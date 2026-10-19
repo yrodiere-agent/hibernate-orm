@@ -111,7 +111,7 @@ jobs:
       - name: Run build script
         run: |
           read -ra common_gradle_args <<< "$COMMON_GRADLE_ARGS"
-          ./ci/build-github.sh "${common_gradle_args[@]}" -x test -x testKitTest
+          ./ci/build-github.sh "${common_gradle_args[@]}" -x test
         env:
           RDBMS: h2
           JPA_PREVIEW: "true"
