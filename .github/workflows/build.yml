@@ -206,11 +206,17 @@ jobs:
       # Install test/build JDKs first (if needed), capture their homes,
       # then install JDK 25 which becomes JAVA_HOME for the Gradle daemon.
       - name: Set up test JDK ${{ matrix.java-test-version }}
-        if: ${{ matrix.java-test-version && matrix.java-test-version != '25' }}
+        if: ${{ matrix.java-test-version && matrix.java-test-version != '25' && matrix.java-test-from != 'jdk.java.net' }}
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: 'temurin'
           java-version: ${{ matrix.java-test-version }}
+      - name: Set up test JDK ${{ matrix.java-test-version }} (EA from jdk.java.net)
+        if: ${{ matrix.java-test-from == 'jdk.java.net' }}
+        uses: oracle-actions/setup-java@fff43251af9936a0e6a4d5d0946e14f1680e9b6b # v1.5.0
+        with:
+          website: jdk.java.net
+          release: ${{ matrix.java-test-version }}
       - name: Capture test JDK home
         if: ${{ matrix.java-test-version && matrix.java-test-version != '25' }}
         run: echo "TEST_JDK_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
