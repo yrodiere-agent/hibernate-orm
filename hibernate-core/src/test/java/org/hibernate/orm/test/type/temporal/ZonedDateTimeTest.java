@@ -165,6 +165,11 @@ public class ZonedDateTimeTest
 	}
 
 	@Override
+	protected Class<ZonedDateTime> getJavaTimeType() {
+		return ZonedDateTime.class;
+	}
+
+	@Override
 	protected Class<EntityWithZonedDateTime> getEntityType() {
 		return EntityWithZonedDateTime.class;
 	}

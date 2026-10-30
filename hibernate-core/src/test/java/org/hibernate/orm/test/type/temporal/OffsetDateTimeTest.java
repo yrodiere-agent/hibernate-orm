@@ -152,6 +152,11 @@ public class OffsetDateTimeTest extends AbstractJavaTimeTypeTests<OffsetDateTime
 	}
 
 	@Override
+	protected Class<OffsetDateTime> getJavaTimeType() {
+		return OffsetDateTime.class;
+	}
+
+	@Override
 	protected Class<EntityWithOffsetDateTime> getEntityType() {
 		return EntityWithOffsetDateTime.class;
 	}

@@ -51,6 +51,8 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 		return builder.build();
 	}
 
+	protected abstract Class<T> getJavaTimeType();
+
 	protected abstract Class<E> getEntityType();
 
 	protected abstract E createEntityForHibernateWrite(int id);
@@ -95,8 +97,9 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 	@Test
 	@JiraKey(value = "HHH-13266")
 	public void writeThenNativeRead(SessionFactoryScope factoryScope) {
-		assumeNoJdbcTimeZone();
-		assumeNoDirectJdbc();
+		if ( !env.directJdbc() ) {
+			assumeNoJdbcTimeZone();
+		}
 
 		Timezones.withDefaultTimeZone( env, () -> {
 			factoryScope.inTransaction( session -> {
@@ -111,10 +114,18 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 						statement.execute();
 						try (ResultSet resultSet = statement.getResultSet()) {
 							resultSet.next();
-							Object nativeRead = extractJdbcValue( resultSet, 1, factoryScope );
-							Object expected = getExpectedJdbcValueAfterHibernateWrite();
-							Assertions.assertEquals( expected, nativeRead,
-									"Values written by Hibernate ORM should match the original value (same day, hour, ...)" );
+							if ( env.directJdbc() ) {
+								T nativeRead = resultSet.getObject( 1, getJavaTimeType() );
+								T expected = getExpectedPropertyValueAfterHibernateRead();
+								Assertions.assertEquals( expected, nativeRead,
+										"Values written by Hibernate ORM should match the original value (same day, hour, ...)" );
+							}
+							else {
+								Object nativeRead = extractJdbcValue( resultSet, 1, factoryScope );
+								Object expected = getExpectedJdbcValueAfterHibernateWrite();
+								Assertions.assertEquals( expected, nativeRead,
+										"Values written by Hibernate ORM should match the original value (same day, hour, ...)" );
+							}
 						}
 					}
 				} );
@@ -125,8 +136,9 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 	@Test
 	@JiraKey(value = "HHH-13266")
 	public void nativeWriteThenRead(SessionFactoryScope factoryScope) {
-		assumeNoJdbcTimeZone();
-		assumeNoDirectJdbc();
+		if ( !env.directJdbc() ) {
+			assumeNoJdbcTimeZone();
+		}
 
 		Timezones.withDefaultTimeZone( env, () -> {
 			factoryScope.inTransaction( session -> {
@@ -135,7 +147,12 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 							"insert into entity_tbl (id_col, value_col) values (?,?)"
 					)) {
 						statement.setInt( 1, 1 );
-						bindJdbcValue( statement, 2, factoryScope );
+						if ( env.directJdbc() ) {
+							statement.setObject( 2, getExpectedPropertyValueAfterHibernateRead() );
+						}
+						else {
+							bindJdbcValue( statement, 2, factoryScope );
+						}
 						statement.execute();
 					}
 				} );
@@ -155,11 +172,5 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 				+ ", because the expectations do not take that time zone into account."
 				+ " When this property is set, we only test that a write by Hibernate followed by "
 				+ " a read by Hibernate returns the same value." );
-	}
-
-	protected void assumeNoDirectJdbc() {
-		Assumptions.assumeFalse( env.directJdbc(),
-				"Tests with native read/writes are only relevant when not using " + JAVA_TIME_USE_DIRECT_JDBC
-				+ ", because the expectations use java.sql.Timestamp which is not involved in the direct path." );
 	}
 }
