@@ -42,13 +42,17 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 	@Override
 	public StandardServiceRegistry produceServiceRegistry(StandardServiceRegistryBuilder builder) {
 		builder.applySetting( JAVA_TIME_USE_DIRECT_JDBC, env.directJdbc() );
+		configureServiceRegistry( builder );
+		return builder.build();
+	}
+
+	protected void configureServiceRegistry(StandardServiceRegistryBuilder builder) {
 		if ( env.hibernateJdbcTimeZone() != null ) {
 			builder.applySetting( JDBC_TIME_ZONE, env.hibernateJdbcTimeZone().getId() );
 		}
 		if ( env.remappingDialectClass() != null ) {
 			builder.applySetting( DIALECT, env.remappingDialectClass().getName() );
 		}
-		return builder.build();
 	}
 
 	protected abstract Class<T> getJavaTimeType();
