@@ -1,7 +1,10 @@
 package org.hibernate.orm.test.type.temporal;
 
+import org.hibernate.SessionFactory;
+import org.hibernate.boot.MetadataSources;
 import org.hibernate.boot.registry.StandardServiceRegistry;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.engine.jdbc.connections.spi.ConnectionProvider;
 import org.hibernate.testing.orm.junit.JiraKey;
 import org.hibernate.testing.orm.junit.ServiceRegistryFunctionalTesting;
 import org.hibernate.testing.orm.junit.ServiceRegistryProducer;
@@ -167,6 +170,49 @@ public abstract class AbstractJavaTimeTypeTests<T, E>
 				Assertions.assertEquals( expected, read,
 						"Values written without Hibernate ORM should be read correctly by Hibernate ORM" );
 			} );
+		} );
+	}
+
+	@Test
+	@JiraKey(value = "HHH-13515")
+	public void legacyWriteThenDirectRead(SessionFactoryScope factoryScope) {
+		Assumptions.assumeTrue( env.directJdbc(),
+				"This test verifies backward compatibility: values written with Hibernate ORM"
+				+ " using legacy JDBC should be readable with Hibernate ORM using direct JDBC." );
+
+		Timezones.withDefaultTimeZone( env, () -> {
+			ConnectionProvider connectionProvider = factoryScope.getSessionFactory()
+					.getServiceRegistry().getService( ConnectionProvider.class );
+			StandardServiceRegistryBuilder legacyBuilder = new StandardServiceRegistryBuilder();
+			legacyBuilder.applySetting( JAVA_TIME_USE_DIRECT_JDBC, false );
+			legacyBuilder.addService( ConnectionProvider.class, connectionProvider );
+			configureServiceRegistry( legacyBuilder );
+
+			StandardServiceRegistry legacyRegistry = legacyBuilder.build();
+			try {
+				SessionFactory legacySessionFactory = new MetadataSources( legacyRegistry )
+						.addAnnotatedClass( getEntityType() )
+						.buildMetadata()
+						.buildSessionFactory();
+				try {
+					legacySessionFactory.inTransaction( session -> {
+						session.persist( createEntityForHibernateWrite( 1 ) );
+					} );
+
+					factoryScope.inTransaction( session -> {
+						T read = getActualPropertyValue( session.find( getEntityType(), 1 ) );
+						T expected = getExpectedPropertyValueAfterHibernateRead();
+						Assertions.assertEquals( expected, read,
+								"Values written with legacy JDBC should be readable with direct JDBC" );
+					} );
+				}
+				finally {
+					legacySessionFactory.close();
+				}
+			}
+			finally {
+				StandardServiceRegistryBuilder.destroy( legacyRegistry );
+			}
 		} );
 	}
 
